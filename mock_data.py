@@ -8,9 +8,17 @@ Cikti: [{tarih, aciklama, tip, tutar}] listesi (tutar: gelir +, gider -)
 """
 import calendar
 import random
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 AYLIK_NET_MAAS = 65000.00
+
+# Sunucu (or. Render) UTC'de calissa da tarihler Turkiye saatine gore hesaplanir
+TIMEZONE = ZoneInfo("Europe/Istanbul")
+
+
+def local_today() -> date:
+    return datetime.now(TIMEZONE).date()
 
 # Banka dokumunde gorunen abonelik odemeleri. Gercek fiyat ayliga gore kur ve
 # vergi farki nedeniyle biraz oynar; "fiyat" platformun liste fiyatidir.
@@ -57,7 +65,7 @@ def window_months(today: date, months: int = 6) -> list[tuple[int, int]]:
 
 def generate_transactions(today: date | None = None, months: int = 6) -> list[dict]:
     """Son `months` tam ay ile icinde bulunulan ayin bugune kadarki islemleri."""
-    today = today or date.today()
+    today = today or local_today()
     rng = random.Random(42)
     rows = []
 
