@@ -1,15 +1,15 @@
-"""
-demo_ai.py
-API anahtari olmadan calisan demo analiz motoru. ai_engine.py ile ayni
-cikti bicimini, davranis profilindeki gercek sayilardan kural tabanli
-olarak uretir. Boylece canli demo her zaman calisir ve maliyeti sifirdir.
-ANTHROPIC_API_KEY tanimlandiginda uygulama otomatik olarak Claude'a gecer.
+"""API anahtarı yokken kullanılan kural tabanlı analiz motoru.
+
+Claude ile aynı çıktı biçimini, davranış profilindeki sayılardan üretir.
 """
 import statistics
+from datetime import date
+
+MONTHS = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz",
+          "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"]
 
 
 def tl(n: float) -> str:
-    """289.99 -> '289,99 ₺', 1019.49 -> '1.019,49 ₺'"""
     s = f"{n:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
     return f"{s} ₺"
 
@@ -18,12 +18,16 @@ def pct(n: float, digits: int = 1) -> str:
     return f"%{round(n, digits):g}"
 
 
+def _month(iso: str) -> str:
+    d = date.fromisoformat(iso)
+    return f"{MONTHS[d.month - 1]} {d.year}"
+
+
 def _rivals(f: dict) -> list[dict]:
     return f.get("ayni_kategorideki_diger_abonelikler", [])
 
 
 def churn_score(f: dict) -> int:
-    """Davranis sinyallerinden 0-100 arasi churn skoru."""
     rivals = _rivals(f)
     score = 20.0
     if f["sanal_kart_durumu"] == "Donduruldu":
@@ -36,52 +40,64 @@ def churn_score(f: dict) -> int:
     score += min(10, 10 * f["maasa_orani_yuzde"])
     if f["limit_ucretin_altinda_mi"]:
         score += 10
+    if f.get("fiyat_artisi"):
+        score += min(12, f["fiyat_artisi"]["oran_yuzde"] / 2)
     return int(max(5, min(95, round(score))))
 
 
 def analyze_subscription(f: dict) -> dict:
-    """B2C: kullaniciya ozel tasarruf onerisi."""
     rivals = _rivals(f)
     count = len(rivals) + 1
     ratio = f["maasa_orani_yuzde"]
     cat = f["kategori"]
     frozen = f["sanal_kart_durumu"] == "Donduruldu"
     most_expensive = f["kategorinin_en_pahalisi_mi"] and rivals
+    hike = f.get("fiyat_artisi")
+    capped = hike and f["sanal_kart_aylik_limiti_tl"] <= hike["eski_fiyat"]
 
     if frozen:
         ozet = (f"Kartın dondurulmuş durumda ve her ay {tl(f['aylik_ucret_tl'])} tasarruf ediyorsun; "
                 "bu servisi artık kullanmıyorsan kartı kalıcı olarak silebilirsin.")
+    elif hike and not capped:
+        ozet = (f"Ücret {_month(hike['tarih'])} zammıyla {pct(hike['oran_yuzde'])} arttı; yeni fiyatı "
+                f"ödemek istemiyorsan kart limitini eski fiyat olan {tl(hike['eski_fiyat'])}'ye sabitleyebilirsin.")
+    elif hike:
+        ozet = (f"Zamdan sonra kart limitini eski fiyat olan {tl(hike['eski_fiyat'])}'de tuttun; "
+                f"{tl(hike['yeni_fiyat'])} tutarındaki sonraki çekim reddedilecek. Kullanmaya devam "
+                "edeceksen limiti yeni fiyata çekmen gerekir.")
     elif rivals:
         ozet = (f"{'Maaşının çok küçük bir kısmını kaplıyor' if ratio < 1 else 'Bütçende hissedilir bir yer tutuyor'}"
                 f" ama aynı kategoride {count} aboneliğin var"
                 f"{' ve bu en pahalısı' if most_expensive else ''}, kullanım sıklığını gözden geçirmen iyi olur.")
     else:
-        ozet = (f"{cat} kategorisindeki tek aboneliğin ve maaşının {pct(ratio, 2)}'ini oluşturuyor; "
+        ozet = (f"{cat} kategorisindeki tek aboneliğin ve maaşa oranı {pct(ratio, 2)}; "
                 "düzenli kullanıyorsan devam etmen mantıklı.")
 
     maddeler = [
-        f"Maaşının sadece {pct(ratio, 2)}'ini oluşturuyor, bütçene yük değil" if ratio < 1
-        else f"Maaşının {pct(ratio, 2)}'ini oluşturuyor, abonelikler arasında yükü yüksek",
+        f"Maaşa oranı {pct(ratio, 2)}, bütçene yük değil" if ratio < 1
+        else f"Maaşa oranı {pct(ratio, 2)}, abonelikler arasında yükü yüksek",
     ]
     if rivals:
         maddeler.append(f"{cat} kategorisinde {count} aboneliğin var"
                         f"{' ve bu en pahalısı' if most_expensive else ''}, hepsini aktif kullanmıyor olabilirsin")
-        cheapest = min(r["aylik_ucret_tl"] for r in rivals)
+        fees = [r["aylik_ucret_tl"] for r in rivals] + [f["aylik_ucret_tl"]]
+        saving = tl(min(fees)) if min(fees) == max(fees) else f"{tl(min(fees))} ile {tl(max(fees))} arası"
         maddeler.append(f"Diğer {len(rivals)} {cat.lower()} aboneliğinle çakışma varsa, birini iptal edip "
-                        f"aylık {tl(min(cheapest, f['aylik_ucret_tl']))} ile {tl(f['aylik_ucret_tl'])} "
-                        "arası tasarruf edebilirsin")
+                        f"aylık {saving} tasarruf edebilirsin")
     else:
         maddeler.append(f"{cat} kategorisinde alternatif bir aboneliğin yok, çakışan harcama görünmüyor")
         maddeler.append(f"Son {f['kesintisiz_odeme_ay_sayisi']} ayda kesintisiz ödeme yapılmış, "
                         "düzenli kullanılan bir servis gibi görünüyor")
+    if hike:
+        maddeler.insert(1, f"{_month(hike['tarih'])} itibarıyla fiyat {tl(hike['eski_fiyat'])}'den "
+                           f"{tl(hike['yeni_fiyat'])}'ye çıktı ({pct(hike['oran_yuzde'])} zam)")
     if f["limit_ucretin_altinda_mi"]:
-        maddeler[-1] = (f"Kart limitin ({tl(f['sanal_kart_aylik_limiti_tl'])}) ücretin altında; "
-                        "sonraki çekim reddedilecek")
+        maddeler[2] = (f"Kart limitin ({tl(f['sanal_kart_aylik_limiti_tl'])}) ücretin altında; "
+                       "sonraki çekim reddedilecek")
     return {"ozet": ozet, "maddeler": maddeler[:3]}
 
 
 def churn_analysis(f: dict) -> dict:
-    """B2B: churn skoru, risk aciklamasi ve retention aksiyonlari."""
     rivals = _rivals(f)
     fee = f["aylik_ucret_tl"]
     score = churn_score(f)
@@ -110,12 +126,22 @@ def churn_analysis(f: dict) -> dict:
         degerlendirme.append(f"Toplam abonelik yükü maaşın {pct(f['toplam_abonelik_yukunun_maasa_orani_yuzde'])}'i, "
                              "genel harcama trendi " + f["genel_harcama_trendi"])
 
+    hike = f.get("fiyat_artisi")
+    if hike:
+        degerlendirme.insert(1, f"{_month(hike['tarih'])} zammından sonra ücret {tl(hike['eski_fiyat'])}'den "
+                                f"{tl(fee)}'ye çıktı ({pct(hike['oran_yuzde'])}); kullanıcı fiyata duyarlı")
+        degerlendirme = degerlendirme[:3]
+
     cheapest = min(rivals, key=lambda r: r["aylik_ucret_tl"]) if rivals else None
-    if frozen or score >= 70:
+    if hike:
+        first = {"baslik": "Zam Öncesi Fiyat Garantisi",
+                 "aciklama": f"3 ay boyunca eski fiyat olan {tl(hike['eski_fiyat'])} ile devam etme "
+                             "teklifiyle zam kaynaklı iptal riskini azaltın"}
+    elif frozen or score >= 70:
         disc = round(fee * 0.6, 2)
         first = {"baslik": "2 Ay %40 İndirim",
                  "aciklama": f"{tl(fee)} yerine {tl(disc)} ile"
-                             + (f" rakip {cheapest['hizmet']}'in fiyatına yaklaşarak" if cheapest else "")
+                             + (f" rakip {cheapest['hizmet']} fiyatına yaklaşarak" if cheapest else "")
                              + " 2 aylık sadakat kazanın"}
     else:
         disc = round(fee * 0.8, 2)
@@ -138,7 +164,6 @@ def churn_analysis(f: dict) -> dict:
 
 
 def spending_summary(payload: dict) -> dict:
-    """Islem gecmisi: son 6 ayin kisisel harcama ozeti."""
     months = payload["aylik_gider_toplamlari"]
     avg = statistics.mean(m["gider"] for m in months)
     items = list(payload["harcama_kalemleri_6_ay_tl"].items())

@@ -1,12 +1,10 @@
-"""
-app.py — GhostPay sunucusu
-Yerel:  python3 app.py   ->   http://localhost:8501
-Canli:  gunicorn app:app (bkz. render.yaml)
+"""GhostPay sunucusu.
 
-Arayuz static/ klasorundeki tek sayfalik uygulamadir; bu dosya veri, sanal
-kart islemleri ve yapay zeka cagrilari icin JSON API sunar. Her ziyaretci
-kendi demo verisini alir (cerez ile), boylece ayni anda gezen kullanicilar
-birbirinin kartlarini etkilemez. Veriler bellekte tutulur.
+Yerel: python3 app.py → http://localhost:8501
+Canlı: gunicorn app:app (render.yaml)
+
+Her ziyaretçi çerezle kendi demo verisini alır; biri kart silince diğerleri
+etkilenmez. Oturumlar bellekte tutulduğu için gunicorn tek işçiyle çalışır.
 """
 import hashlib
 import os
@@ -21,17 +19,18 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import demo_ai
 from ai_engine import AIEngine, AIError
-from detector import CATEGORIES, build_features, detect_subscriptions, monthly_totals, next_due
+from catalog import CATEGORIES
+from detector import build_features, detect_subscriptions, monthly_totals, next_due
 from mock_data import AYLIK_NET_MAAS, TIMEZONE, generate_transactions, local_today, window_months
 
 SESSION_COOKIE = "gp_sid"
-SESSION_TTL = 2 * 3600          # 2 saat islem yapilmayan demo oturumu silinir
+SESSION_TTL = 2 * 3600
 MAX_SESSIONS = 300
 MAX_LIMIT = 100_000
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
-app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)   # Render gibi proxy arkasinda
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)
 
 engine = AIEngine.from_environment()
 executor = ThreadPoolExecutor(max_workers=6)
@@ -42,8 +41,6 @@ def now_iso() -> str:
 
 
 class DemoSession:
-    """Bir ziyaretcinin demo verisi ve yapay zeka sonuclari."""
-
     def __init__(self, sid: str):
         self.sid = sid
         self.lock = threading.RLock()
@@ -53,11 +50,13 @@ class DemoSession:
         self.transactions = generate_transactions(self.today)
         self.subs: list[dict] = detect_subscriptions(self.transactions, self.today)
         self.anon_id = "usr_" + hashlib.sha1(sid.encode()).hexdigest()[:8]
-        self.churn: dict[str, dict] = {}     # B2B churn analizi (abonelik id -> sonuc)
-        self.user_ai: dict[str, dict] = {}   # B2C kisisel analiz (abonelik id -> sonuc)
-        self.summary: dict = {}              # Islem gecmisi AI ozeti
-        self.pending: set[str] = set()       # arka planda Claude analizi suren abonelikler
-        self.generation = 0                  # eski AI yanitlarinin yenisini ezmemesi icin
+        self.churn: dict[str, dict] = {}
+        self.user_ai: dict[str, dict] = {}
+        self.summary: dict = {}
+        self.deleted: dict[str, tuple[int, dict]] = {}
+        self.pending: set[str] = set()
+        # Aynı abonelik için eski bir Claude cevabı yenisinin üstüne yazılmasın
+        self.generation = 0
         for s in self.subs:
             self.reset_churn(s)
 
@@ -68,11 +67,10 @@ class DemoSession:
         return build_features(sub, self.subs, self.transactions, AYLIK_NET_MAAS)
 
     def company_signals(self, sub: dict) -> dict:
-        """Sirkete iletilen anonimlestirilmis finansal davranis sinyalleri."""
         return {"anonim_kullanici_id": self.anon_id, **self.features(sub)}
 
     def reset_churn(self, sub: dict) -> None:
-        """Kural tabanli skoru hemen yazar ve analizi (Claude ise arka planda) baslatir."""
+        """Tahmini skoru hemen yazar; Claude cevabı arka planda gelince üstüne yazılır."""
         self.generation += 1
         signals = self.company_signals(sub)
         self.churn[sub["id"]] = {"churn_risk": demo_ai.churn_score(signals), "kaynak": "tahmini",
@@ -162,13 +160,6 @@ def body() -> dict:
     return request.get_json(silent=True) or {}
 
 
-def demo_pause() -> None:
-    """Demo motoru anlik cevap verir; arayuzdeki analiz animasyonu gorunsun diye kisa bekleme."""
-    if engine.mode == "demo" and not app.testing:
-        time.sleep(0.7)
-
-
-# ---------------- Sayfa ----------------
 @app.get("/")
 def index():
     return send_from_directory(app.static_folder, "index.html")
@@ -192,19 +183,18 @@ def reset_demo():
     return jsonify(fresh.payload())
 
 
-# ---------------- Sanal kart islemleri ----------------
 @app.post("/api/abonelik/<sub_id>/durum")
 def set_status(sub_id):
     sess = current_session()
-    durum = body().get("durum")
-    if durum not in ("Aktif", "Donduruldu"):
+    status = body().get("durum")
+    if status not in ("Aktif", "Donduruldu"):
         return error("Geçersiz kart durumu.", 400)
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
             return error("Abonelik bulunamadı.", 404)
-        sub["durum"] = durum
-        sub["dondurma_tarihi"] = sess.today.isoformat() if durum == "Donduruldu" else None
+        sub["durum"] = status
+        sub["dondurma_tarihi"] = sess.today.isoformat() if status == "Donduruldu" else None
         sub["sonraki_odeme"] = next_due(date.fromisoformat(sub["son_odeme"]), sess.today).isoformat()
         sess.user_ai.pop(sub_id, None)
         sess.reset_churn(sub)
@@ -219,7 +209,7 @@ def set_limit(sub_id):
     except (TypeError, ValueError):
         return error("Geçerli bir limit girin.", 400)
     if not 0 <= limit <= MAX_LIMIT:
-        return error(f"Limit 0 ile {MAX_LIMIT:,} ₺ arasında olmalı.".replace(",", "."), 400)
+        return error("Limit 0 ile 100.000 ₺ arasında olmalı.", 400)
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
@@ -237,6 +227,7 @@ def delete_card(sub_id):
         sub = sess.find(sub_id)
         if not sub:
             return error("Abonelik bulunamadı.", 404)
+        sess.deleted[sub_id] = (sess.subs.index(sub), sub)
         sess.subs.remove(sub)
         for store in (sess.churn, sess.user_ai):
             store.pop(sub_id, None)
@@ -244,7 +235,18 @@ def delete_card(sub_id):
     return jsonify(sess.payload())
 
 
-# ---------------- Yapay zeka ----------------
+@app.post("/api/abonelik/<sub_id>/geri-al")
+def restore_card(sub_id):
+    sess = current_session()
+    with sess.lock:
+        if sub_id not in sess.deleted:
+            return error("Geri alınacak kart bulunamadı.", 404)
+        position, sub = sess.deleted.pop(sub_id)
+        sess.subs.insert(min(position, len(sess.subs)), sub)
+        sess.reset_churn(sub)
+    return jsonify(sess.payload())
+
+
 @app.post("/api/ai/abonelik/<sub_id>")
 def ai_user(sub_id):
     sess = current_session()
@@ -257,7 +259,6 @@ def ai_user(sub_id):
         result = {**engine.analyze_subscription(features), "zaman": now_iso()}
     except AIError as e:
         return error(str(e), 502)
-    demo_pause()
     with sess.lock:
         sess.user_ai[sub_id] = result
     return jsonify(sess.payload())
@@ -294,7 +295,6 @@ def ai_summary():
         result = {**engine.spending_summary(payload), "zaman": now_iso()}
     except AIError as e:
         return error(str(e), 502)
-    demo_pause()
     with sess.lock:
         sess.summary = result
     return jsonify(sess.payload())
