@@ -165,10 +165,15 @@ function ringSvg(score) {
     <circle cx="75" cy="75" r="44" fill="#15151d"/></svg>`;
 }
 
+function niceStep(raw) {
+  const p = 10 ** Math.floor(Math.log10(raw));
+  return [1, 2, 2.5, 5, 10].find((m) => m * p >= raw) * p;
+}
+
 function areaSvg(points, { width = 900, height = 190, yTicks = false, label = "" } = {}) {
   const W = width, H = height, padL = yTicks ? 58 : 8, padR = 8, padT = 12, padB = 24;
   const max = Math.max(...points.map((p) => p.value), 1);
-  const yMax = yTicks ? max * 4 / 3 : max * 1.35;
+  const yMax = yTicks ? 4 * niceStep((max * 1.15) / 4) : max * 1.35;
   const x = (i) => padL + (i * (W - padL - padR)) / Math.max(1, points.length - 1);
   const y = (v) => padT + (1 - v / yMax) * (H - padT - padB);
   const line = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
@@ -453,7 +458,7 @@ function renderB2B() {
       <div class="panel kpi"><div class="label">Churn Riski</div><div class="value">%${c.churn_risk}</div><div class="sub">${level.text}${hasAi ? "" : " · tahmini"}</div></div>
       <div class="panel kpi"><div class="label">Aylık Ücret</div><div class="value">${money(s.fiyat)}</div><div class="sub">Maaşa oranı %${pct((100 * s.fiyat) / salary(), 2)}${s.zam ? ` · %${pct(s.zam.oran_yuzde)} zamlı` : ""}</div></div>
       <div class="panel kpi"><div class="label">Kategorideki Rakip Sayısı</div><div class="value">${rivals}</div><div class="sub">${esc(s.kategori)}</div></div>
-      <div class="panel kpi"><div class="label">Hesap Durumu</div><div class="chip ${isFrozen(s) ? "" : "aktif"}">${s.durum}</div></div>
+      <div class="panel kpi"><div class="label">Hesap Durumu</div><div class="chip ${isFrozen(s) ? "" : "aktif"}">${s.durum}</div><div class="sub">Kart limiti ${tl(s.limit)}</div></div>
       <div class="panel kpi danger"><div class="label">Gelir Kaybı Riski</div><div class="value">${money(s.fiyat)} / ay</div><div class="sub">${tl(12 * s.fiyat)} / yıl</div></div>
     </div>
 
@@ -471,7 +476,7 @@ function renderB2B() {
       </div>
       <div class="panel chart-panel">
         <div class="label plain">Son 6 Ay Ödeme Geçmişi</div>
-        ${areaSvg(months, { width: 760, height: 200, label: `${s.ad} son 6 ay ödemeleri` })}
+        ${areaSvg(months, { width: 760, height: 200, yTicks: true, label: `${s.ad} son 6 ay ödemeleri` })}
       </div>
     </div>
 
