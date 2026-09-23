@@ -1,4 +1,2 @@
-streamlit
-pandas
-anthropic
-plotly
+flask>=3.0
+anthropic>=1.8
