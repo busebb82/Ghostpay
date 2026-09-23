@@ -1,356 +1,317 @@
 """
-app.py — GhostPay profesyonel arayuz v2
-Calistir: python3 -m streamlit run app.py
+app.py — GhostPay sunucusu
+Yerel:  python3 app.py   ->   http://localhost:8501
+Canli:  gunicorn app:app (bkz. render.yaml)
+
+Arayuz static/ klasorundeki tek sayfalik uygulamadir; bu dosya veri, sanal
+kart islemleri ve yapay zeka cagrilari icin JSON API sunar. Her ziyaretci
+kendi demo verisini alir (cerez ile), boylece ayni anda gezen kullanicilar
+birbirinin kartlarini etkilemez. Veriler bellekte tutulur.
 """
 import hashlib
+import os
+import secrets
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, datetime
 
-import pandas as pd
-import plotly.express as px
-import streamlit as st
+from flask import Flask, g, jsonify, request, send_from_directory
+from werkzeug.middleware.proxy_fix import ProxyFix
 
-from mock_data import generate_transactions
-from detector import detect_subscriptions, build_features
-from ai_engine import (AIError, get_client, analyze_subscription,
-                       retention_insights)
+import demo_ai
+from ai_engine import AIEngine, AIError
+from detector import CATEGORIES, build_features, detect_subscriptions, monthly_totals, next_due
+from mock_data import AYLIK_NET_MAAS, TIMEZONE, generate_transactions, local_today, window_months
 
-# ---------------- Sayfa ayarlari ----------------
-st.set_page_config(
-    page_title="GhostPay — Abonelik Zekâsı",
-    page_icon="👻",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+SESSION_COOKIE = "gp_sid"
+SESSION_TTL = 2 * 3600          # 2 saat islem yapilmayan demo oturumu silinir
+MAX_SESSIONS = 300
+MAX_LIMIT = 100_000
 
-# ---------------- Stil (CSS) ----------------
-st.markdown("""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+app = Flask(__name__, static_folder="static", static_url_path="/static")
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1)   # Render gibi proxy arkasinda
 
-html, body, [class*="st-"], [class*="css"] {
-    font-family: 'Inter', -apple-system, sans-serif;
-}
-#MainMenu, footer {visibility: hidden;}
-.block-container {padding-top: 1.2rem; max-width: 1240px;}
-
-h1, h2, h3, h4 {font-family:'Inter',sans-serif; letter-spacing:-.02em;}
-
-/* ---- Hero ---- */
-.gp-hero {
-    background: linear-gradient(135deg, #6C5CE7 0%, #341f97 100%);
-    padding: 32px 38px; border-radius: 20px; color: #fff; margin-bottom: 26px;
-}
-.gp-hero h1 {margin:0; font-size:2.15rem; font-weight:800; color:#fff;}
-.gp-hero p  {margin:8px 0 0; opacity:.88; font-size:1rem; font-weight:400;}
-
-/* ---- KPI kartlari ---- */
-.gp-kpi {
-    background:#fff; border:1px solid #ececf4; border-radius:14px;
-    padding:18px 22px; box-shadow:0 2px 12px rgba(20,20,43,.05);
-}
-.gp-kpi .label {color:#8b8ba7; font-size:.72rem; letter-spacing:.6px;
-                text-transform:uppercase; font-weight:600;}
-.gp-kpi .value {font-size:1.5rem; font-weight:800; color:#14142b; margin-top:4px;}
-.gp-kpi .sub   {font-size:.75rem; color:#0ca678; font-weight:600; margin-top:2px;}
-
-/* ---- Sanal kart ---- */
-.vcard {
-    position:relative; border-radius:18px; padding:20px 24px; color:#fff;
-    height:196px; box-shadow:0 10px 26px rgba(52,31,151,.22);
-    display:flex; flex-direction:column; justify-content:space-between;
-}
-.vc-aktif      {background:linear-gradient(135deg,#6C5CE7 0%,#341f97 100%);}
-.vc-donduruldu {background:linear-gradient(135deg,#74b9ff 0%,#0984e3 100%);}
-.vc-iptal      {background:linear-gradient(135deg,#b2bec3 0%,#636e72 100%);}
-
-.vcard .top {display:flex; justify-content:space-between; align-items:center;}
-.vcard .brand {font-weight:800; font-size:.95rem; letter-spacing:1.2px;}
-.vcard .stamp {
-    font-size:.66rem; font-weight:800; letter-spacing:1px;
-    border:1.6px solid rgba(255,255,255,.85); border-radius:6px;
-    padding:3px 9px; text-transform:uppercase;
-}
-.vcard .chip {
-    width:42px; height:30px; border-radius:6px;
-    background:linear-gradient(135deg,#f5d76e,#d4af37);
-    box-shadow:inset 0 0 4px rgba(0,0,0,.25);
-}
-.vcard .num {
-    font-family:'Courier New',monospace; font-size:1.08rem;
-    letter-spacing:2.6px; font-weight:600;
-}
-.vcard .meta {display:flex; justify-content:space-between; font-size:.68rem;
-              opacity:.92; text-transform:uppercase; letter-spacing:.5px;}
-.vcard .meta b {display:block; font-size:.82rem; letter-spacing:0;
-                text-transform:none; margin-top:2px;}
-
-/* ---- Abonelik detay ---- */
-.sub-name {font-size:1.12rem; font-weight:700; color:#14142b; margin:0 0 2px;}
-.sub-cat  {color:#8b8ba7; font-size:.82rem; margin:0 0 10px;}
-.sub-line {font-size:.85rem; color:#4a4a68; margin:3px 0;}
-.sub-line b {color:#14142b;}
-.shield {color:#0ca678; font-weight:600; font-size:.8rem;}
-</style>
-""", unsafe_allow_html=True)
+engine = AIEngine.from_environment()
+executor = ThreadPoolExecutor(max_workers=6)
 
 
-# ---------------- Yardimcilar ----------------
-def kpi(col, label, value, sub=""):
-    sub_html = f'<div class="sub">{sub}</div>' if sub else ""
-    col.markdown(
-        f'<div class="gp-kpi"><div class="label">{label}</div>'
-        f'<div class="value">{value}</div>{sub_html}</div>',
-        unsafe_allow_html=True,
-    )
+def now_iso() -> str:
+    return datetime.now(TIMEZONE).isoformat(timespec="seconds")
 
 
-def card_last4(merchant: str) -> str:
-    """Her abonelige sabit, sahte bir kart-son-4-hane uretir."""
-    return str(int(hashlib.md5(merchant.encode()).hexdigest(), 16) % 10000).zfill(4)
+class DemoSession:
+    """Bir ziyaretcinin demo verisi ve yapay zeka sonuclari."""
 
+    def __init__(self, sid: str):
+        self.sid = sid
+        self.lock = threading.RLock()
+        self.last_seen = time.time()
+        self.today = local_today()
+        self.months = window_months(self.today)
+        self.transactions = generate_transactions(self.today)
+        self.subs: list[dict] = detect_subscriptions(self.transactions, self.today)
+        self.anon_id = "usr_" + hashlib.sha1(sid.encode()).hexdigest()[:8]
+        self.churn: dict[str, dict] = {}     # B2B churn analizi (abonelik id -> sonuc)
+        self.user_ai: dict[str, dict] = {}   # B2C kisisel analiz (abonelik id -> sonuc)
+        self.summary: dict = {}              # Islem gecmisi AI ozeti
+        self.pending: set[str] = set()       # arka planda Claude analizi suren abonelikler
+        self.generation = 0                  # eski AI yanitlarinin yenisini ezmemesi icin
+        for s in self.subs:
+            self.reset_churn(s)
 
-def next_payment(s: dict) -> str:
-    return (pd.to_datetime(s["son_odeme"]) + pd.Timedelta(days=30)).strftime("%d.%m.%Y")
+    def find(self, sub_id: str) -> dict | None:
+        return next((s for s in self.subs if s["id"] == sub_id), None)
 
+    def features(self, sub: dict) -> dict:
+        return build_features(sub, self.subs, self.transactions, AYLIK_NET_MAAS)
 
-def vcard_html(s: dict, durum: str) -> str:
-    cls = {"Aktif": "vc-aktif", "Donduruldu": "vc-donduruldu", "İptal": "vc-iptal"}[durum]
-    stamp = {"Aktif": "AKTİF", "Donduruldu": "🧊 DONDURULDU", "İptal": "İPTAL EDİLDİ"}[durum]
-    odeme = next_payment(s) if durum == "Aktif" else "—"
-    return f"""
-    <div class="vcard {cls}">
-      <div class="top">
-        <span class="brand">👻 GHOSTPAY <span style="opacity:.7">VIRTUAL</span></span>
-        <span class="stamp">{stamp}</span>
-      </div>
-      <div class="chip"></div>
-      <div class="num">••••&nbsp;••••&nbsp;••••&nbsp;{card_last4(s["merchant"])}</div>
-      <div class="meta">
-        <span>Bağlı Servis<b>{s["merchant"]}</b></span>
-        <span>Aylık Limit<b>{s["aylik_tutar"]:.2f} ₺</b></span>
-        <span>Sonraki Ödeme<b>{odeme}</b></span>
-      </div>
-    </div>"""
+    def company_signals(self, sub: dict) -> dict:
+        """Sirkete iletilen anonimlestirilmis finansal davranis sinyalleri."""
+        return {"anonim_kullanici_id": self.anon_id, **self.features(sub)}
 
-
-# ---------------- Veri hazirligi ----------------
-if "subs" not in st.session_state:
-    df = generate_transactions(months=6)
-    subs = build_features(detect_subscriptions(df), df)
-    st.session_state.df = df
-    st.session_state.subs = subs
-    st.session_state.cards = {s["merchant"]: "Aktif" for s in subs}
-    st.session_state.analysis = {}
-    st.session_state.retention = {}
-
-subs = st.session_state.subs
-cards = st.session_state.cards
-client = get_client()
-
-# ---------------- Kenar cubugu ----------------
-with st.sidebar:
-    st.markdown("## 👻 GhostPay")
-    st.caption("Yapay zekâ destekli abonelik zekâ platformu")
-    st.divider()
-    if client:
-        st.success("Claude bağlantısı hazır", icon="✅")
-    else:
-        st.error("API anahtarı bulunamadı. `.streamlit/secrets.toml` "
-                 "dosyasını kontrol edin.", icon="🔑")
-    st.divider()
-    if st.button("🔄 Analizleri Sıfırla", use_container_width=True):
-        st.session_state.analysis = {}
-        st.session_state.retention = {}
-        st.rerun()
-    st.caption("GhostPay © 2026 — Demo sürümü")
-
-# ---------------- Hero ----------------
-st.markdown("""
-<div class="gp-hero">
-  <h1>👻 GhostPay</h1>
-  <p>Her aboneliğe özel sanal kart, yapay zekâ destekli fayda ve churn analizi.
-  Gereksiz harcamaları tek dokunuşla durdurun.</p>
-</div>
-""", unsafe_allow_html=True)
-
-tab_user, tab_company, tab_raw = st.tabs(
-    ["👤 Kullanıcı Paneli", "🏢 Şirket Paneli", "🧾 Ham Veri"]
-)
-
-# ==================== KULLANICI PANELI ====================
-with tab_user:
-    aktif_maliyet = sum(s["aylik_tutar"] for s in subs if cards[s["merchant"]] == "Aktif")
-    tasarruf = sum(s["aylik_tutar"] for s in subs if cards[s["merchant"]] != "Aktif")
-
-    k1, k2, k3, k4 = st.columns(4)
-    kpi(k1, "Tespit Edilen Abonelik", len(subs))
-    kpi(k2, "Aylık Aktif Maliyet", f"{aktif_maliyet:,.2f} ₺")
-    kpi(k3, "Yıllık Tahmini Maliyet", f"{aktif_maliyet * 12:,.2f} ₺")
-    kpi(k4, "Aylık Tasarruf", f"{tasarruf:,.2f} ₺",
-        sub="dondurma ve iptallerden" if tasarruf else "")
-
-    st.write("")
-    g1, g2 = st.columns([1, 1.4])
-    with g1:
-        st.markdown("##### Kategoriye Göre Dağılım")
-        cat = pd.DataFrame(subs).groupby("kategori")["aylik_tutar"].sum().reset_index()
-        fig = px.pie(cat, names="kategori", values="aylik_tutar", hole=.58,
-                     color_discrete_sequence=["#6C5CE7", "#a29bfe", "#341f97", "#b2bec3"])
-        fig.update_traces(textinfo="label+percent")
-        fig.update_layout(height=290, margin=dict(t=10, b=10, l=10, r=10),
-                          showlegend=False, font_family="Inter")
-        st.plotly_chart(fig, use_container_width=True)
-    with g2:
-        st.markdown("##### Abonelik Maliyetleri (₺/ay)")
-        bar = pd.DataFrame(subs).sort_values("aylik_tutar")
-        fig2 = px.bar(bar, x="aylik_tutar", y="merchant", orientation="h",
-                      color_discrete_sequence=["#6C5CE7"])
-        fig2.update_layout(height=290, margin=dict(t=10, b=10, l=10, r=10),
-                           xaxis_title=None, yaxis_title=None, font_family="Inter")
-        st.plotly_chart(fig2, use_container_width=True)
-
-    st.divider()
-    st.markdown("### 💳 Sanal Kartlarınız")
-    st.caption("Her abonelik, yalnızca o servise tanımlı ve aylık tutarla "
-               "sınırlandırılmış bir sanal karta bağlıdır. Kart dondurulduğunda "
-               "bir sonraki ödeme çekimi otomatik olarak engellenir.")
-
-    for s in subs:
-        m = s["merchant"]
-        durum = cards[m]
-        with st.container(border=True):
-            col_card, col_info = st.columns([1.05, 1.5], gap="large")
-
-            with col_card:
-                st.markdown(vcard_html(s, durum), unsafe_allow_html=True)
-
-            with col_info:
-                st.markdown(
-                    f'<p class="sub-name">{m}</p>'
-                    f'<p class="sub-cat">{s["kategori"]} kategorisi</p>'
-                    f'<p class="sub-line">Aylık ücret: <b>{s["aylik_tutar"]:.2f} ₺</b> '
-                    f'&nbsp;•&nbsp; Bütçe payı: <b>%{s["butce_payi_yuzde"]}</b> '
-                    f'&nbsp;•&nbsp; Toplam ödeme: <b>{s["odeme_sayisi"]}</b></p>'
-                    f'<p class="sub-line">İlk ödeme: <b>{s["ilk_odeme"]}</b> '
-                    f'&nbsp;•&nbsp; Son ödeme: <b>{s["son_odeme"]}</b></p>'
-                    f'<p class="shield">🛡️ Limit koruması: bu karttan '
-                    f'{s["aylik_tutar"]:.2f} ₺ üzeri çekim reddedilir</p>',
-                    unsafe_allow_html=True)
-
-                st.write("")
-                b1, b2, b3 = st.columns([1, 1, 1.4])
-                if durum == "Aktif":
-                    if b1.button("🧊 Kartı Dondur", key=f"d_{m}", use_container_width=True):
-                        cards[m] = "Donduruldu"
-                        st.rerun()
-                    if b2.button("❌ Aboneliği İptal Et", key=f"i_{m}", use_container_width=True):
-                        cards[m] = "İptal"
-                        st.rerun()
-                elif durum == "Donduruldu":
-                    if b1.button("▶️ Kartı Aktif Et", key=f"a_{m}", use_container_width=True):
-                        cards[m] = "Aktif"
-                        st.rerun()
-                    if b2.button("❌ Aboneliği İptal Et", key=f"i_{m}", use_container_width=True):
-                        cards[m] = "İptal"
-                        st.rerun()
-                else:  # Iptal
-                    if b1.button("🔁 Yeniden Başlat", key=f"r_{m}", use_container_width=True):
-                        cards[m] = "Aktif"
-                        st.rerun()
-
-                if b3.button("🤖 AI ile Analiz Et", key=f"ai_{m}", type="primary",
-                             use_container_width=True, disabled=client is None):
-                    with st.spinner("Claude davranış profilini analiz ediyor..."):
-                        try:
-                            st.session_state.analysis[m] = analyze_subscription(
-                                client, {**s, "sanal_kart_durumu": durum})
-                        except AIError as e:
-                            st.session_state.analysis[m] = {"hata": str(e)}
-                    st.rerun()
-
-            r = st.session_state.analysis.get(m)
-            if r:
-                if "hata" in r:
-                    st.error(f"Analiz başarısız: {r['hata']}", icon="⚠️")
-                else:
-                    a1, a2 = st.columns(2)
-                    with a1:
-                        st.markdown(f"**Utility Score:** {r['utility_score']}/100")
-                        st.progress(r["utility_score"] / 100)
-                    with a2:
-                        st.markdown(f"**Churn Risk:** {r['churn_risk']}/100")
-                        st.progress(r["churn_risk"] / 100)
-                    st.markdown("**Skorların nedeni:**")
-                    for madde in r["aciklamalar"]:
-                        st.markdown(f"- {madde}")
-                    st.info(f"💡 **Öneri:** {r['oneri']}")
-
-# ==================== SIRKET PANELI ====================
-with tab_company:
-    st.markdown("### 🏢 Şirketler için Churn İstihbaratı")
-    st.caption("Şirketlere yalnızca anonimleştirilmiş churn sinyalleri iletilir; "
-               "kimlik bilgisi paylaşılmaz.")
-
-    company = st.selectbox("Şirket seçin", [s["merchant"] for s in subs])
-    s = next(x for x in subs if x["merchant"] == company)
-    analiz = st.session_state.analysis.get(company, {})
-    churn = analiz.get("churn_risk")
-
-    k1, k2, k3 = st.columns(3)
-    kpi(k1, "Sanal Kart Durumu", cards[company])
-    kpi(k2, "Kategorideki Rakip Sayısı", s["ayni_kategori_abonelik_sayisi"] - 1)
-    kpi(k3, "Hesaplanan Churn Risk", f"{churn}/100" if churn is not None else "—")
-
-    st.write("")
-    signals = {
-        "anonim_kullanici_id": "user_7f3a9c",
-        "hizmet": company,
-        "aylik_ucret": s["aylik_tutar"],
-        "ayni_kategorideki_rakip_abonelik_sayisi": s["ayni_kategori_abonelik_sayisi"] - 1,
-        "kategorinin_en_pahalisi_mi": s["kategorideki_en_pahali_mi"],
-        "sanal_kart_durumu": cards[company],
-        "hesaplanan_churn_risk": churn if churn is not None else "henüz hesaplanmadı",
-        "kullanicinin_genel_harcama_trendi": s["genel_harcama_trendi"],
-    }
-    with st.expander("Şirkete iletilen ham sinyaller (JSON)"):
-        st.json(signals)
-
-    if st.button("🤖 Retention Stratejisi Üret", type="primary",
-                 disabled=client is None):
-        with st.spinner("Claude retention önerileri üretiyor..."):
-            try:
-                st.session_state.retention[company] = retention_insights(client, signals)
-            except AIError as e:
-                st.session_state.retention[company] = {"hata": str(e)}
-        st.rerun()
-
-    r = st.session_state.retention.get(company)
-    if r:
-        if "hata" in r:
-            st.error(f"Analiz başarısız: {r['hata']}", icon="⚠️")
+    def reset_churn(self, sub: dict) -> None:
+        """Kural tabanli skoru hemen yazar ve analizi (Claude ise arka planda) baslatir."""
+        self.generation += 1
+        signals = self.company_signals(sub)
+        self.churn[sub["id"]] = {"churn_risk": demo_ai.churn_score(signals), "kaynak": "tahmini",
+                                 "degerlendirme": [], "aksiyonlar": [], "zaman": None,
+                                 "nesil": self.generation}
+        if engine.mode == "claude":
+            self.pending.add(sub["id"])
+            executor.submit(self._run_churn, sub["id"], signals, self.generation)
         else:
-            st.warning(f"**Risk Özeti:** {r['risk_ozeti']}")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.markdown("**Olası ayrılma nedenleri**")
-                for n in r["ayrilma_nedenleri"]:
-                    st.markdown(f"- {n}")
-            with c2:
-                st.markdown("**Önerilen retention aksiyonları**")
-                for n in r["retention_onerileri"]:
-                    st.markdown(f"- ✅ {n}")
+            self._run_churn(sub["id"], signals, self.generation)
 
-# ==================== HAM VERI ====================
-with tab_raw:
-    st.markdown("### 🧾 Simüle Edilmiş Banka İşlem Dökümü (6 ay)")
-    st.caption("Gerçek üründe bu veri Open Banking API'sinden gelir.")
+    def _run_churn(self, sub_id: str, signals: dict, gen: int) -> None:
+        try:
+            result = {**engine.churn_analysis(signals), "kaynak": engine.mode, "zaman": now_iso()}
+        except AIError as e:
+            result = {"hata": str(e)}
+        with self.lock:
+            current = self.churn.get(sub_id)
+            if not current or current["nesil"] != gen:
+                return
+            self.pending.discard(sub_id)
+            self.churn[sub_id] = {**current, **result}
 
-    aylik = (st.session_state.df.set_index("tarih")
-             .resample("ME")["tutar"].sum().reset_index())
-    fig3 = px.area(aylik, x="tarih", y="tutar",
-                   color_discrete_sequence=["#6C5CE7"])
-    fig3.update_layout(height=250, margin=dict(t=10, b=10, l=10, r=10),
-                       xaxis_title=None, yaxis_title="Aylık toplam (₺)",
-                       font_family="Inter")
-    st.plotly_chart(fig3, use_container_width=True)
+    def payload(self) -> dict:
+        with self.lock:
+            return {
+                "bugun": self.today.isoformat(),
+                "maas": AYLIK_NET_MAAS,
+                "kategoriler": CATEGORIES,
+                "ai_modu": engine.mode,
+                "aylar": [{"yil": y, "ay": m} for y, m in self.months],
+                "aylik_toplamlar": monthly_totals(self.transactions, self.months),
+                "islemler": [{**t, "tarih": t["tarih"].isoformat()} for t in self.transactions],
+                "abonelikler": self.subs,
+                "churn": self.churn,
+                "kullanici_ai": self.user_ai,
+                "ozet": self.summary,
+                "bekleyen": sorted(self.pending),
+            }
 
-    st.dataframe(st.session_state.df, use_container_width=True, hide_index=True)
+
+sessions: dict[str, DemoSession] = {}
+sessions_lock = threading.Lock()
+
+
+def _cleanup_sessions() -> None:
+    now = time.time()
+    for sid in [k for k, s in sessions.items() if now - s.last_seen > SESSION_TTL]:
+        del sessions[sid]
+    while len(sessions) >= MAX_SESSIONS:
+        oldest = min(sessions.values(), key=lambda s: s.last_seen)
+        del sessions[oldest.sid]
+
+
+def current_session() -> DemoSession:
+    sid = request.cookies.get(SESSION_COOKIE, "")
+    with sessions_lock:
+        sess = sessions.get(sid)
+        if sess is None:
+            _cleanup_sessions()
+            sid = secrets.token_urlsafe(18)
+            sess = sessions[sid] = DemoSession(sid)
+            g.new_sid = sid
+        sess.last_seen = time.time()
+        return sess
+
+
+@app.after_request
+def finalize(response):
+    if getattr(g, "new_sid", None):
+        response.set_cookie(SESSION_COOKIE, g.new_sid, max_age=SESSION_TTL, httponly=True,
+                            samesite="Lax", secure=request.is_secure)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; "
+        "font-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'")
+    return response
+
+
+def error(message: str, status: int):
+    return jsonify({"hata": message}), status
+
+
+def body() -> dict:
+    return request.get_json(silent=True) or {}
+
+
+def demo_pause() -> None:
+    """Demo motoru anlik cevap verir; arayuzdeki analiz animasyonu gorunsun diye kisa bekleme."""
+    if engine.mode == "demo" and not app.testing:
+        time.sleep(0.7)
+
+
+# ---------------- Sayfa ----------------
+@app.get("/")
+def index():
+    return send_from_directory(app.static_folder, "index.html")
+
+
+@app.get("/healthz")
+def healthz():
+    return {"durum": "ok", "ai_modu": engine.mode}
+
+
+@app.get("/api/state")
+def get_state():
+    return jsonify(current_session().payload())
+
+
+@app.post("/api/demo/sifirla")
+def reset_demo():
+    sess = current_session()
+    with sessions_lock:
+        fresh = sessions[sess.sid] = DemoSession(sess.sid)
+    return jsonify(fresh.payload())
+
+
+# ---------------- Sanal kart islemleri ----------------
+@app.post("/api/abonelik/<sub_id>/durum")
+def set_status(sub_id):
+    sess = current_session()
+    durum = body().get("durum")
+    if durum not in ("Aktif", "Donduruldu"):
+        return error("Geçersiz kart durumu.", 400)
+    with sess.lock:
+        sub = sess.find(sub_id)
+        if not sub:
+            return error("Abonelik bulunamadı.", 404)
+        sub["durum"] = durum
+        sub["dondurma_tarihi"] = sess.today.isoformat() if durum == "Donduruldu" else None
+        sub["sonraki_odeme"] = next_due(date.fromisoformat(sub["son_odeme"]), sess.today).isoformat()
+        sess.user_ai.pop(sub_id, None)
+        sess.reset_churn(sub)
+    return jsonify(sess.payload())
+
+
+@app.post("/api/abonelik/<sub_id>/limit")
+def set_limit(sub_id):
+    sess = current_session()
+    try:
+        limit = round(float(str(body().get("limit")).replace(",", ".")), 2)
+    except (TypeError, ValueError):
+        return error("Geçerli bir limit girin.", 400)
+    if not 0 <= limit <= MAX_LIMIT:
+        return error(f"Limit 0 ile {MAX_LIMIT:,} ₺ arasında olmalı.".replace(",", "."), 400)
+    with sess.lock:
+        sub = sess.find(sub_id)
+        if not sub:
+            return error("Abonelik bulunamadı.", 404)
+        sub["limit"] = limit
+        sess.user_ai.pop(sub_id, None)
+        sess.reset_churn(sub)
+    return jsonify(sess.payload())
+
+
+@app.delete("/api/abonelik/<sub_id>")
+def delete_card(sub_id):
+    sess = current_session()
+    with sess.lock:
+        sub = sess.find(sub_id)
+        if not sub:
+            return error("Abonelik bulunamadı.", 404)
+        sess.subs.remove(sub)
+        for store in (sess.churn, sess.user_ai):
+            store.pop(sub_id, None)
+        sess.pending.discard(sub_id)
+    return jsonify(sess.payload())
+
+
+# ---------------- Yapay zeka ----------------
+@app.post("/api/ai/abonelik/<sub_id>")
+def ai_user(sub_id):
+    sess = current_session()
+    with sess.lock:
+        sub = sess.find(sub_id)
+        if not sub:
+            return error("Abonelik bulunamadı.", 404)
+        features = sess.features(sub)
+    try:
+        result = {**engine.analyze_subscription(features), "zaman": now_iso()}
+    except AIError as e:
+        return error(str(e), 502)
+    demo_pause()
+    with sess.lock:
+        sess.user_ai[sub_id] = result
+    return jsonify(sess.payload())
+
+
+@app.get("/api/b2b/<sub_id>/rapor")
+def b2b_report(sub_id):
+    sess = current_session()
+    with sess.lock:
+        sub = sess.find(sub_id)
+        if not sub:
+            return error("Abonelik bulunamadı.", 404)
+        return jsonify(sess.company_signals(sub))
+
+
+@app.post("/api/ai/ozet")
+def ai_summary():
+    sess = current_session()
+    with sess.lock:
+        by_merchant: dict[str, float] = {}
+        for t in sess.transactions:
+            if t["tip"] == "Gider":
+                by_merchant[t["aciklama"]] = by_merchant.get(t["aciklama"], 0) - t["tutar"]
+        payload = {
+            "aylik_net_maas_tl": AYLIK_NET_MAAS,
+            "aylik_gider_toplamlari": monthly_totals(sess.transactions, sess.months),
+            "harcama_kalemleri_6_ay_tl": {k: round(v, 2) for k, v in
+                                          sorted(by_merchant.items(), key=lambda x: -x[1])},
+            "abonelikler": [{"hizmet": s["ad"], "kategori": s["kategori"],
+                             "aylik_ucret_tl": s["fiyat"], "sanal_kart": s["durum"]}
+                            for s in sess.subs],
+        }
+    try:
+        result = {**engine.spending_summary(payload), "zaman": now_iso()}
+    except AIError as e:
+        return error(str(e), 502)
+    demo_pause()
+    with sess.lock:
+        sess.summary = result
+    return jsonify(sess.payload())
+
+
+@app.post("/api/ai/yenile")
+def refresh_all():
+    sess = current_session()
+    with sess.lock:
+        sess.user_ai.clear()
+        sess.summary = {}
+        for s in sess.subs:
+            sess.reset_churn(s)
+    return jsonify(sess.payload())
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", "8501"))
+    print(f"GhostPay çalışıyor: http://localhost:{port}  (yapay zekâ modu: {engine.mode})")
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=port, threaded=True)
