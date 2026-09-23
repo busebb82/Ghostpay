@@ -1,9 +1,4 @@
-"""
-detector.py
-Islem gecmisinden duzenli (aylik) odemeleri tespit eder, abonelik olup
-olmadiklarini belirler ve kategorilere ayirir. Ayrica her abonelik icin
-yapay zekaya gonderilecek davranissal ozellikleri (feature) cikarir.
-"""
+"""İşlem geçmişinden abonelik tespiti ve yapay zekâya giden davranış profili."""
 import calendar
 import statistics
 import zlib
@@ -11,50 +6,20 @@ from collections import defaultdict
 from datetime import date, timedelta
 from itertools import pairwise
 
-CATEGORIES = ["Video", "Müzik", "Üretkenlik", "Yapay Zekâ"]
+from catalog import CARD_NUMBERS, CATEGORIES, INITIAL_CARD_STATE, SERVICES
 
-# Bilinen servisler: banka dokumundeki aciklama -> gorunen ad ve kategori
-SERVICE_CATALOG = {
-    "NETFLIX":         {"ad": "Netflix",         "kategori": "Video",      "fiyat": 289.99},
-    "DISNEY+":         {"ad": "Disney+",         "kategori": "Video",      "fiyat": 249.90},
-    "YOUTUBE PREMIUM": {"ad": "Youtube Premium", "kategori": "Video",      "fiyat": 119.99},
-    "SPOTIFY":         {"ad": "Spotify",         "kategori": "Müzik",      "fiyat": 99.00},
-    "YOUTUBE MUSIC":   {"ad": "Youtube Music",   "kategori": "Müzik",      "fiyat": 89.99},
-    "APPLE MUSIC":     {"ad": "Apple Music",     "kategori": "Müzik",      "fiyat": 59.99},
-    "CANVA PRO":       {"ad": "Canva Pro",       "kategori": "Üretkenlik", "fiyat": 757.50},
-    "ADOBE CREATIVE":  {"ad": "Adobe Creative",  "kategori": "Üretkenlik", "fiyat": 379.00},
-    "CHATGPT PLUS":    {"ad": "ChatGPT Plus",    "kategori": "Yapay Zekâ", "fiyat": 1019.49},
-    "CLAUDE PRO":      {"ad": "Claude Pro",      "kategori": "Yapay Zekâ", "fiyat": 1010.00},
-    "GEMINI":          {"ad": "Gemini",          "kategori": "Yapay Zekâ", "fiyat": 1000.00},
-}
-
-# Demo baslangic durumu: kullanicinin daha once dondurdugu kartlar ve
-# ucretin altina cektigi limitler
-INITIAL_CARD_STATE = {
-    "DISNEY+":       {"durum": "Donduruldu"},
-    "YOUTUBE MUSIC": {"durum": "Donduruldu"},
-    "CLAUDE PRO":    {"durum": "Donduruldu"},
-    "CANVA PRO":     {"limit": 704.70},
-    "CHATGPT PLUS":  {"limit": 808.33},
-}
-
-CARD_NUMBERS = {
-    "NETFLIX": "4821", "DISNEY+": "3390", "YOUTUBE PREMIUM": "9931",
-    "SPOTIFY": "2205", "YOUTUBE MUSIC": "6614", "APPLE MUSIC": "5017",
-    "CANVA PRO": "1140", "ADOBE CREATIVE": "7788", "CHATGPT PLUS": "3072",
-    "CLAUDE PRO": "8456", "GEMINI": "6203",
-}
+# Kur oynaması (±%3) zam sayılmasın diye eşik bunun üstünde tutuldu
+PRICE_HIKE_MIN_RATIO = 1.06
 
 
 def add_months(d: date, n: int = 1) -> date:
-    """Ayin gununu korur; kisa aylarda ayin son gunune yuvarlar (31 Oca -> 28 Sub)."""
+    """Ayın gününü korur, kısa aylarda son güne yuvarlar (31 Oca → 28 Şub → 31 Mar)."""
     y, m = divmod(d.month - 1 + n, 12)
     year, month = d.year + y, m + 1
     return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
 def next_due(last_payment: date, today: date) -> date:
-    """Son odemeden sonra bugunden ileri dusen ilk odeme tarihi."""
     n = 1
     while add_months(last_payment, n) <= today:
         n += 1
@@ -65,9 +30,25 @@ def slug(merchant: str) -> str:
     return merchant.lower().replace("+", "-plus").replace(" ", "-")
 
 
+def detect_price_hike(charges: list[dict]) -> dict | None:
+    """Tutarın kalıcı olarak yükseldiği son noktayı bulur.
+
+    Yükselişten sonraki her çekim, önceki en yüksek çekimin belirgin şekilde
+    üstünde olmalı; tek seferlik bir sapma zam sayılmaz.
+    """
+    amounts = [c["tutar"] for c in charges]
+    for k in range(len(amounts) - 1, 0, -1):
+        before, after = amounts[:k], amounts[k:]
+        old, new = statistics.median(before), statistics.median(after)
+        if min(after) >= max(before) * 1.02 and new / old >= PRICE_HIKE_MIN_RATIO:
+            return {"eski_fiyat": round(old, 2), "yeni_fiyat": round(new, 2),
+                    "oran_yuzde": round(100 * (new / old - 1), 1),
+                    "tarih": charges[k]["tarih"]}
+    return None
+
+
 def detect_subscriptions(transactions: list[dict], today: date) -> list[dict]:
-    """En az 3 kez, ~30 gun arayla ve benzer tutarla tekrarlanan giderleri
-    abonelik olarak isaretler."""
+    """En az 3 kez, ~30 gün arayla ve benzer tutarla tekrarlanan giderler abonelik sayılır."""
     groups = defaultdict(list)
     for t in transactions:
         if t["tip"] == "Gider":
@@ -81,16 +62,15 @@ def detect_subscriptions(transactions: list[dict], today: date) -> list[dict]:
             continue
         if statistics.pstdev(amounts) > statistics.mean(amounts) * 0.15:
             continue
-        gaps = [(b["tarih"] - a["tarih"]).days for a, b in pairwise(txs)]
-        if not all(25 <= g <= 35 for g in gaps):
+        if not all(25 <= (b["tarih"] - a["tarih"]).days <= 35 for a, b in pairwise(txs)):
             continue
 
-        info = SERVICE_CATALOG.get(merchant, {
-            "ad": merchant.title(), "kategori": "Diğer",
-            "fiyat": round(amounts[-1], 2)})
+        info = SERVICES.get(merchant, {"ad": merchant.title(), "kategori": "Diğer",
+                                       "fiyat": round(amounts[-1], 2)})
         state = INITIAL_CARD_STATE.get(merchant, {})
-        son_odeme = txs[-1]["tarih"]
-        durum = state.get("durum", "Aktif")
+        last_payment = txs[-1]["tarih"]
+        status = state.get("durum", "Aktif")
+        charges = [{"tarih": t["tarih"].isoformat(), "tutar": -t["tutar"]} for t in txs]
 
         subs.append({
             "id": slug(merchant),
@@ -99,19 +79,21 @@ def detect_subscriptions(transactions: list[dict], today: date) -> list[dict]:
             "kategori": info["kategori"],
             "fiyat": info["fiyat"],
             "limit": state.get("limit", info["fiyat"]),
-            "durum": durum,
+            "durum": status,
             "kart_no": CARD_NUMBERS.get(merchant, str(zlib.crc32(merchant.encode()) % 10000).zfill(4)),
-            "son_odeme": son_odeme.isoformat(),
-            "sonraki_odeme": next_due(son_odeme, today).isoformat(),
-            # Demo: kullanici bu kartlari son odemenin ertesi gunu dondurdu
-            "dondurma_tarihi": (son_odeme + timedelta(days=1)).isoformat() if durum == "Donduruldu" else None,
-            "odemeler": [{"tarih": t["tarih"].isoformat(), "tutar": -t["tutar"]} for t in txs],
+            "son_odeme": last_payment.isoformat(),
+            "sonraki_odeme": next_due(last_payment, today).isoformat(),
+            # Demo kullanıcısı bu kartları son ödemenin ertesi günü dondurdu
+            "dondurma_tarihi": (last_payment + timedelta(days=1)).isoformat()
+                               if status == "Donduruldu" else None,
+            "zam": detect_price_hike(charges),
+            "odemeler": charges,
         })
 
     cat_order = {c: i for i, c in enumerate(CATEGORIES)}
-    catalog_order = {m: i for i, m in enumerate(SERVICE_CATALOG)}
+    known_order = {m: i for i, m in enumerate(SERVICES)}
     subs.sort(key=lambda s: (cat_order.get(s["kategori"], len(cat_order)),
-                             catalog_order.get(s["merchant"], len(catalog_order))))
+                             known_order.get(s["merchant"], len(known_order))))
     return subs
 
 
@@ -131,9 +113,8 @@ def _spending_trend(transactions: list[dict]) -> str:
     return "stabil"
 
 
-def build_features(sub: dict, subs: list[dict], transactions: list[dict],
-                   salary: float) -> dict:
-    """Yapay zekaya gonderilecek davranis profili. Kisisel veri icermez."""
+def build_features(sub: dict, subs: list[dict], transactions: list[dict], salary: float) -> dict:
+    """Yapay zekâya ve şirkete giden profil; kullanıcıyı tanıtan bilgi içermez."""
     same_cat = [s for s in subs if s["kategori"] == sub["kategori"] and s["id"] != sub["id"]]
     rival_avg = statistics.mean(s["fiyat"] for s in same_cat) if same_cat else None
     total_active = sum(s["fiyat"] for s in subs if s["durum"] == "Aktif")
@@ -147,6 +128,7 @@ def build_features(sub: dict, subs: list[dict], transactions: list[dict],
         "dondurma_tarihi": sub["dondurma_tarihi"],
         "sanal_kart_aylik_limiti_tl": sub["limit"],
         "limit_ucretin_altinda_mi": sub["limit"] < sub["fiyat"],
+        "fiyat_artisi": sub["zam"],
         "ayni_kategorideki_diger_abonelikler": [
             {"hizmet": s["ad"], "aylik_ucret_tl": s["fiyat"], "durum": s["durum"]}
             for s in same_cat],
@@ -164,10 +146,10 @@ def build_features(sub: dict, subs: list[dict], transactions: list[dict],
 def monthly_totals(transactions: list[dict], months: list[tuple[int, int]]) -> list[dict]:
     out = []
     for y, m in months:
-        gider = -sum(t["tutar"] for t in transactions
-                     if t["tip"] == "Gider" and (t["tarih"].year, t["tarih"].month) == (y, m))
-        gelir = sum(t["tutar"] for t in transactions
-                    if t["tip"] == "Gelir" and (t["tarih"].year, t["tarih"].month) == (y, m))
-        out.append({"yil": y, "ay": m, "gider": round(gider, 2), "gelir": round(gelir, 2)})
+        in_month = [t for t in transactions if (t["tarih"].year, t["tarih"].month) == (y, m)]
+        out.append({
+            "yil": y, "ay": m,
+            "gider": round(-sum(t["tutar"] for t in in_month if t["tip"] == "Gider"), 2),
+            "gelir": round(sum(t["tutar"] for t in in_month if t["tip"] == "Gelir"), 2),
+        })
     return out
-
