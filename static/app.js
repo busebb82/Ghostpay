@@ -122,8 +122,8 @@ const churnOf = (s) => ui.state.churn[s.id] || { churn_risk: 0 };
 const hikeOpen = (s) => s.zam && !isFrozen(s) && s.limit > s.zam.eski_fiyat;
 
 function riskLevel(score) {
-  if (score >= 70) return { cls: "yuksek", text: "Yüksek risk" };
-  if (score >= 45) return { cls: "orta", text: "Orta risk" };
+  if (score >= 65) return { cls: "yuksek", text: "Yüksek risk" };
+  if (score >= 40) return { cls: "orta", text: "Orta risk" };
   return { cls: "dusuk", text: "Düşük risk" };
 }
 
@@ -469,7 +469,8 @@ function renderB2B() {
             AI modeli; işlem geçmişi, ödeme düzeni, aynı kategorideki diğer abonelikler, abonelik maliyeti,
             son zamlar, toplam abonelik yükü ve harcama alışkanlıklarını birlikte analiz ederek her kullanıcı için bir
             davranış profili oluşturur. Bu profil üzerinden ilgili aboneliğin iptal edilme (churn) olasılığı
-            yüzdesel olarak hesaplanır.</span></span>
+            yüzdesel olarak hesaplanır. 0–39 düşük, 40–64 orta, 65 ve üzeri yüksek risk sayılır; en güçlü sinyal
+            kartın dondurulması, kesintisiz ödeme geçmişi ise riski düşürür.</span></span>
         </div>
         <div class="ring">${ringSvg(c.churn_risk)}<div class="val">%${c.churn_risk}</div></div>
         <button class="btn small" data-action="explain">${ICON.spark}AI Açıklamasını Gör</button>
