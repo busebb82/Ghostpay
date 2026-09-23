@@ -1,0 +1,15 @@
+# Render'ın ücretsiz planı 15 dakika istek gelmeyince sunucuyu uyutuyor;
+# ilk açılışın ~50 sn sürmemesi için siteye düzenli istek atılıyor.
+name: Keep alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: curl -fsS --retry 3 --retry-delay 30 --max-time 120 https://ghostpay-670i.onrender.com/healthz
