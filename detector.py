@@ -9,6 +9,7 @@ import statistics
 import zlib
 from collections import defaultdict
 from datetime import date, timedelta
+from itertools import pairwise
 
 CATEGORIES = ["Video", "Müzik", "Üretkenlik", "Yapay Zekâ"]
 
@@ -80,7 +81,7 @@ def detect_subscriptions(transactions: list[dict], today: date) -> list[dict]:
             continue
         if statistics.pstdev(amounts) > statistics.mean(amounts) * 0.15:
             continue
-        gaps = [(b["tarih"] - a["tarih"]).days for a, b in zip(txs, txs[1:])]
+        gaps = [(b["tarih"] - a["tarih"]).days for a, b in pairwise(txs)]
         if not all(25 <= g <= 35 for g in gaps):
             continue
 

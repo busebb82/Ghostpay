@@ -21,9 +21,8 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 
 import demo_ai
 from ai_engine import AIEngine, AIError
-from detector import (CATEGORIES, build_features, detect_subscriptions,
-                      monthly_totals, next_due)
-from mock_data import AYLIK_NET_MAAS, generate_transactions, window_months
+from detector import CATEGORIES, build_features, detect_subscriptions, monthly_totals, next_due
+from mock_data import AYLIK_NET_MAAS, TIMEZONE, generate_transactions, local_today, window_months
 
 SESSION_COOKIE = "gp_sid"
 SESSION_TTL = 2 * 3600          # 2 saat islem yapilmayan demo oturumu silinir
@@ -39,7 +38,7 @@ executor = ThreadPoolExecutor(max_workers=6)
 
 
 def now_iso() -> str:
-    return datetime.now().isoformat(timespec="seconds")
+    return datetime.now(TIMEZONE).isoformat(timespec="seconds")
 
 
 class DemoSession:
@@ -49,7 +48,7 @@ class DemoSession:
         self.sid = sid
         self.lock = threading.RLock()
         self.last_seen = time.time()
-        self.today = date.today()
+        self.today = local_today()
         self.months = window_months(self.today)
         self.transactions = generate_transactions(self.today)
         self.subs: list[dict] = detect_subscriptions(self.transactions, self.today)
