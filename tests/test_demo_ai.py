@@ -40,3 +40,19 @@ def test_spending_summary_mentions_average():
                "abonelikler": [{"hizmet": "Netflix", "aylik_ucret_tl": 289.99, "sanal_kart": "Aktif"}]}
     text = demo_ai.spending_summary(payload)["ozet"]
     assert "11.000,00 ₺" in text and "Migros" in text and "Netflix" not in text
+
+
+def test_price_hike_shows_up_in_advice():
+    user = demo_ai.analyze_subscription(features("Netflix"))
+    assert "249,99 ₺" in user["ozet"] and "%16" in user["ozet"]
+    churn = demo_ai.churn_analysis(features("Netflix"))
+    assert churn["aksiyonlar"][0]["baslik"] == "Zam Öncesi Fiyat Garantisi"
+
+
+def test_texts_avoid_broken_turkish_suffixes():
+    for sub in SUBS:
+        f = build_features(sub, SUBS, TX, AYLIK_NET_MAAS)
+        text = " ".join(demo_ai.analyze_subscription(f)["maddeler"]
+                        + demo_ai.churn_analysis(f)["degerlendirme"])
+        assert "'ini" not in text and "'in fiyat" not in text
+        assert "ile 1.000,00 ₺ arası" not in text or "1.019,49" in text

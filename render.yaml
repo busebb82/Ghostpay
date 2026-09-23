@@ -5,14 +5,14 @@ services:
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    # Tek worker: demo oturumlari bellekte tutuldugu icin tum istekler ayni surece gitmeli
+    # Demo oturumları bellekte tutulduğu için tüm istekler aynı işçiye gitmeli
     startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
     healthCheckPath: /healthz
     autoDeploy: true
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.7
-      - key: ANTHROPIC_API_KEY   # bos birakilirsa uygulama demo modunda calisir
+      - key: ANTHROPIC_API_KEY   # boş bırakılırsa demo modunda çalışır
         sync: false
-      - key: AI_HOURLY_LIMIT     # saatlik en fazla Claude cagrisi
+      - key: AI_HOURLY_LIMIT     # saatlik en fazla Claude çağrısı
         value: "200"

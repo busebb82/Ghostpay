@@ -7,7 +7,7 @@ from ai_engine import AIEngine
 @pytest.fixture
 def client():
     ghost.app.testing = True
-    ghost.engine = AIEngine(None)          # testler her zaman demo motoruyla calisir
+    ghost.engine = AIEngine(None)
     ghost.sessions.clear()
     with ghost.app.test_client() as c:
         yield c
@@ -26,7 +26,6 @@ def test_state_has_demo_numbers(client):
     s = state(client)
     assert s["ai_modu"] == "demo"
     assert len(s["abonelikler"]) == 11
-    # Demo motoru churn analizini hemen hazirlar
     assert all(c["kaynak"] == "demo" and len(c["aksiyonlar"]) == 3 for c in s["churn"].values())
 
 
@@ -64,6 +63,30 @@ def test_visitors_do_not_share_state():
         a.delete("/api/abonelik/netflix")
         assert "netflix" not in {x["id"] for x in state(a)["abonelikler"]}
         assert "netflix" in {x["id"] for x in state(b)["abonelikler"]}
+
+
+def test_deleted_card_can_be_restored_in_place(client):
+    before = [x["id"] for x in state(client)["abonelikler"]]
+    client.delete("/api/abonelik/disney-plus")
+    s = client.post("/api/abonelik/disney-plus/geri-al").get_json()
+    assert [x["id"] for x in s["abonelikler"]] == before
+    assert "disney-plus" in s["churn"]
+    assert client.post("/api/abonelik/disney-plus/geri-al").status_code == 404
+
+
+def test_capping_limit_at_old_price_closes_the_hike(client):
+    netflix = next(x for x in state(client)["abonelikler"] if x["id"] == "netflix")
+    s = client.post("/api/abonelik/netflix/limit", json={"limit": netflix["zam"]["eski_fiyat"]}).get_json()
+    netflix = next(x for x in s["abonelikler"] if x["id"] == "netflix")
+    assert netflix["limit"] == 249.99 < netflix["fiyat"]
+    analysis = client.post("/api/ai/abonelik/netflix").get_json()["kullanici_ai"]["netflix"]
+    assert "reddedilecek" in analysis["ozet"]
+
+
+def test_security_headers(client):
+    headers = client.get("/").headers
+    assert "script-src 'self'" in headers["Content-Security-Policy"]
+    assert headers["X-Frame-Options"] == "DENY"
 
 
 def test_reset_restores_demo(client):

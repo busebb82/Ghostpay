@@ -1,42 +1,22 @@
-"""
-mock_data.py
-6 aylik sentetik Open Banking islem gecmisi uretir. Gercek hayatta bu veri
-Open Banking API'sinden gelirdi. Veri seti maas, market, ulasim, restoran,
-fatura ve dijital abonelik odemelerini icerir.
+"""Sentetik Open Banking işlem geçmişi.
 
-Cikti: [{tarih, aciklama, tip, tutar}] listesi (tutar: gelir +, gider -)
+Gerçek üründe bu veri Open Banking API'sinden gelir. Maaş, market, ulaşım,
+restoran, fatura ve dijital abonelik ödemelerini içerir; tutarlar gelirde
+pozitif, giderde negatiftir.
 """
 import calendar
 import random
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from catalog import SERVICES
+
 AYLIK_NET_MAAS = 65000.00
 
-# Sunucu (or. Render) UTC'de calissa da tarihler Turkiye saatine gore hesaplanir
+# Render gibi sunucular UTC'de çalışır; "bugün" Türkiye saatine göre hesaplanmalı
 TIMEZONE = ZoneInfo("Europe/Istanbul")
 
-
-def local_today() -> date:
-    return datetime.now(TIMEZONE).date()
-
-# Banka dokumunde gorunen abonelik odemeleri. Gercek fiyat ayliga gore kur ve
-# vergi farki nedeniyle biraz oynar; "fiyat" platformun liste fiyatidir.
-SUBSCRIPTION_CHARGES = {
-    "NETFLIX":         {"fiyat": 289.99,  "gun": 3},
-    "DISNEY+":         {"fiyat": 249.90,  "gun": 7},
-    "YOUTUBE PREMIUM": {"fiyat": 119.99,  "gun": 21},
-    "SPOTIFY":         {"fiyat": 99.00,   "gun": 5},
-    "YOUTUBE MUSIC":   {"fiyat": 89.99,   "gun": 11},
-    "APPLE MUSIC":     {"fiyat": 59.99,   "gun": 14},
-    "CANVA PRO":       {"fiyat": 757.50,  "gun": 19},
-    "ADOBE CREATIVE":  {"fiyat": 379.00,  "gun": 23},
-    "CHATGPT PLUS":    {"fiyat": 1019.49, "gun": 16},
-    "CLAUDE PRO":      {"fiyat": 1010.00, "gun": 15},
-    "GEMINI":          {"fiyat": 1000.00, "gun": 25},
-}
-
-# Abonelik disi harcamalar: (aciklama, min tutar, max tutar, aylik ortalama adet)
+# (açıklama, en düşük tutar, en yüksek tutar, aylık ortalama işlem sayısı)
 DAILY_SPENDING = [
     ("MIGROS",       100, 900, 2),
     ("BIM",          150, 800, 2),
@@ -51,8 +31,12 @@ DAILY_SPENDING = [
 ]
 
 
+def local_today() -> date:
+    return datetime.now(TIMEZONE).date()
+
+
 def window_months(today: date, months: int = 6) -> list[tuple[int, int]]:
-    """Bugunden onceki son `months` tam ayi (yil, ay) olarak dondurur."""
+    """İçinde bulunulan aydan önceki son `months` tam ay, eskiden yeniye."""
     y, m = today.year, today.month
     out = []
     for _ in range(months):
@@ -63,32 +47,43 @@ def window_months(today: date, months: int = 6) -> list[tuple[int, int]]:
     return list(reversed(out))
 
 
+def _charge(service: dict, months_ago: int, rng: random.Random) -> float:
+    price = service["fiyat"]
+    if "zam" in service:
+        old_price, hike_months_ago = service["zam"]
+        if months_ago > hike_months_ago:
+            price = old_price
+    if service.get("doviz"):
+        price *= rng.uniform(0.97, 1.03)
+    return round(price, 2)
+
+
 def generate_transactions(today: date | None = None, months: int = 6) -> list[dict]:
-    """Son `months` tam ay ile icinde bulunulan ayin bugune kadarki islemleri."""
+    """Son `months` tam ay ile bu ayın bugüne kadarki işlemleri, yeniden eskiye."""
     today = today or local_today()
     rng = random.Random(42)
     rows = []
 
     for y, m in window_months(today, months) + [(today.year, today.month)]:
-        last_day = calendar.monthrange(y, m)[1]
-        if (y, m) == (today.year, today.month):
-            last_day = today.day
+        is_current = (y, m) == (today.year, today.month)
+        days_in_month = calendar.monthrange(y, m)[1]
+        last_day = today.day if is_current else days_in_month
+        months_ago = (today.year - y) * 12 + today.month - m
 
         rows.append({"tarih": date(y, m, 1), "aciklama": "MAAS ODEMESI",
                      "tip": "Gelir", "tutar": AYLIK_NET_MAAS})
 
-        for merchant, sub in SUBSCRIPTION_CHARGES.items():
-            tutar = sub["fiyat"] * rng.uniform(0.92, 1.08)
-            if sub["gun"] > last_day and (y, m) == (today.year, today.month):
+        for merchant, service in SERVICES.items():
+            amount = _charge(service, months_ago, rng)
+            if service["gun"] > last_day and is_current:
                 continue
-            rows.append({"tarih": date(y, m, min(sub["gun"], last_day)),
-                         "aciklama": merchant, "tip": "Gider",
-                         "tutar": -round(tutar, 2)})
+            rows.append({"tarih": date(y, m, min(service["gun"], last_day)),
+                         "aciklama": merchant, "tip": "Gider", "tutar": -amount})
 
         for merchant, lo, hi, avg_count in DAILY_SPENDING:
             count = rng.choice([avg_count - 1, avg_count, avg_count + 1])
-            if (y, m) == (today.year, today.month):
-                count = round(count * today.day / calendar.monthrange(y, m)[1])
+            if is_current:
+                count = round(count * today.day / days_in_month)
             for _ in range(count):
                 rows.append({"tarih": date(y, m, rng.randint(1, last_day)),
                              "aciklama": merchant, "tip": "Gider",
