@@ -1,0 +1,14 @@
+[project]
+name = "ghostpay"
+version = "1.0.0"
+description = "Yapay zekâ destekli abonelik yönetimi ve churn analizi (Moka United sanal kartları)"
+requires-python = ">=3.11"
+license = "MIT"
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"

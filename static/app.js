@@ -248,10 +248,12 @@ function renderB2C() {
       <div>
         ${selected ? `<h2 class="subs-title">${esc(selected.name)} Abonelikleri</h2>
           ${selected.items.map(subPanel).join("")}`
-          : `<div class="panel empty">Tespit edilen abonelik kalmadı.</div>`}
+          : `<div class="panel empty">Tespit edilen abonelik kalmadı.<br>${resetButton()}</div>`}
       </div>
     </div>`;
 }
+
+const resetButton = () => `<button class="btn activate" data-action="reset-demo">Demoyu Sıfırla</button>`;
 
 function subPanel(s) {
   const frozen = isFrozen(s);
@@ -360,7 +362,7 @@ async function saveLimit(panel) {
 function renderB2B() {
   const list = subs();
   if (!list.length) {
-    $main.innerHTML = `<div class="page-head"><h1>Müşteri Profil Analizi</h1></div><div class="panel empty">Analiz edilecek abonelik yok.</div>`;
+    $main.innerHTML = `<div class="page-head"><h1>Müşteri Profil Analizi</h1></div><div class="panel empty">Analiz edilecek abonelik yok.<br>${resetButton()}</div>`;
     return;
   }
   if (!list.find((s) => s.id === ui.company)) ui.company = list[0].id;
@@ -369,7 +371,7 @@ function renderB2B() {
   const level = riskLevel(c.churn_risk);
   const rivals = list.filter((x) => x.kategori === s.kategori && x.id !== s.id).length;
   const pendingAi = ui.state.bekleyen.includes(s.id);
-  const hasAi = c.kaynak === "ai";
+  const hasAi = c.kaynak !== "tahmini";
 
   const months = ui.state.aylar.map(({ yil, ay }) => ({
     label: MONTHS_SHORT[ay - 1],
@@ -386,9 +388,7 @@ function renderB2B() {
   } else if (pendingAi) {
     actions = `<div class="skeleton" style="margin-top:14px"><i style="width:30%"></i><i style="width:85%"></i><i style="width:26%;margin-top:18px"></i><i style="width:78%"></i><i style="width:32%;margin-top:18px"></i><i style="width:70%"></i></div>`;
   } else {
-    actions = `<div class="ai-error">${esc(c.hata || (ui.state.ai_hazir
-      ? "AI analizi henüz çalışmadı. Soldaki 'Analizi Yenile' butonunu kullanın."
-      : "API anahtarı bulunamadı. Aksiyon önerileri için ANTHROPIC_API_KEY tanımlayın."))}</div>`;
+    actions = `<div class="ai-error">${esc(c.hata || "AI analizi henüz çalışmadı. Soldaki 'Analizi Yenile' butonunu kullanın.")}</div>`;
   }
 
   $main.innerHTML = `
@@ -445,17 +445,17 @@ function openExplain() {
   const s = subs().find((x) => x.id === ui.company);
   const c = churnOf(s);
   let body;
-  if (c.kaynak === "ai") {
+  if (c.kaynak !== "tahmini") {
     body = `<ul>${c.degerlendirme.map((d) => `<li>${esc(d)}</li>`).join("")}</ul>`;
   } else if (ui.state.bekleyen.includes(s.id)) {
     body = `<div class="skeleton"><i></i><i style="width:85%"></i><i style="width:92%"></i><i style="width:70%"></i></div>`;
   } else {
-    body = `<div class="ai-error">${esc(c.hata || "AI açıklaması için API anahtarı gerekli.")}</div>`;
+    body = `<div class="ai-error">${esc(c.hata || "AI açıklaması henüz hazır değil.")}</div>`;
   }
   openModal(`<div class="modal-head"><h3>AI Risk Açıklaması</h3><button class="modal-close" data-action="close-modal" aria-label="Kapat">×</button></div>
     <div class="risk-box"><div><div class="label">Churn Riski</div><div class="n">${esc(s.ad.toUpperCase())}</div></div><div class="v">%${c.churn_risk}</div></div>
     <div class="ai-box" style="background:transparent;border:0;padding:0">
-      <div class="head"><span class="label">AI'ın Değerlendirmesi</span><span class="when">${c.kaynak === "ai" ? ago(c.zaman) : ""}</span></div>
+      <div class="head"><span class="label">AI'ın Değerlendirmesi</span><span class="when">${c.kaynak !== "tahmini" ? ago(c.zaman) : ""}</span></div>
       ${body}
     </div>`);
 }
@@ -520,6 +520,7 @@ function renderTransactions() {
 function render() {
   document.querySelectorAll(".nav a").forEach((a) => a.classList.toggle("active", a.dataset.view === ui.view));
   if (!ui.state) return;
+  document.getElementById("mode-badge").hidden = ui.state.ai_modu !== "demo";
   if (ui.view === "b2b") renderB2B();
   else if (ui.view === "islemler") renderTransactions();
   else renderB2C();
@@ -630,12 +631,20 @@ document.addEventListener("click", async (e) => {
     }
     return;
   }
+  if (action === "reset-demo") {
+    try {
+      ui.aiErrors = {};
+      setState(await api("POST", "/api/demo/sifirla"));
+      toast("Demo başlangıç durumuna döndü.");
+    } catch (err) { toast(err.message, true); }
+    return;
+  }
   if (action === "refresh") {
     el.classList.add("spin");
     ui.aiErrors = {};
     try {
       setState(await api("POST", "/api/ai/yenile"));
-      toast(ui.state.ai_hazir ? "Yapay zekâ analizleri yenileniyor…" : "API anahtarı bulunamadı; tahmini skorlar yenilendi.");
+      toast("Yapay zekâ analizleri yenilendi.");
     } catch (err) { toast(err.message, true); }
     setTimeout(() => el.classList.remove("spin"), 800);
   }
