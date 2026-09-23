@@ -1,4 +1,4 @@
 -r requirements.txt
 pytest>=8.0
-# CI ile yerelde ayni kurallar calissin diye surum sabit
+# CI ile yerelde aynı kurallar çalışsın diye sürüm sabit
 ruff==0.16.8

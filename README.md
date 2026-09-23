@@ -17,7 +17,7 @@
 ### [▶ Canlı demo / Live demo](https://ghostpay-670i.onrender.com)
 <sub>Ücretsiz sunucu uykudaysa ilk açılış ~50 sn sürebilir · First load may take ~50s while the free server wakes up</sub>
 
-<img src="docs/screenshots/b2c-dashboard.png" alt="GhostPay B2C müşteri paneli" width="900">
+<img src="docs/demo.gif" alt="GhostPay demo: zam tespiti, limit sabitleme, AI analizi ve şirket paneli" width="880">
 
 </div>
 
@@ -30,38 +30,52 @@
 Birçok dijital platformda abonelik iptali karmaşık ve zaman alıcı olduğu için
 kullanıcılar kullanmadıkları aboneliklere ödemeye devam ediyor. GhostPay bu
 problemi **ödeme tarafında** çözer: her aboneliğe ayrı bir Moka United sanal kartı
-bağlanır ve kullanıcı tek dokunuşla kartı dondurabilir, silebilir ya da kart
-limitini güncelleyebilir. Yapay zekâ her aboneliği çok boyutlu değerlendirip
-kullanıcıya kişisel tasarruf önerileri, abonelik şirketlerine ise anonim churn
-analizi ve müşteriyi tutma stratejileri sunar.
+bağlanır; kullanıcı kartı tek dokunuşla dondurabilir, silebilir ya da limitini
+değiştirebilir. Bir platform zam yaptığında GhostPay bunu işlem geçmişinden fark
+eder ve limiti eski fiyata sabitlemeyi önerir. Yapay zekâ her aboneliği çok boyutlu
+değerlendirip kullanıcıya kişisel tasarruf önerileri, abonelik şirketlerine ise
+anonim churn analizi ve müşteriyi tutma stratejileri sunar.
 
 ### Özellikler
 
 | | |
 |---|---|
-| **B2C · Müşteri Paneli** | Aylık net gelir, abonelik gideri, gelire oranı ve dondurulan kartlardan gelen tasarruf. Kategori bazında maliyet dağılımı ve tüm sanal kartların limit kullanımı. |
-| **Sanal kart işlemleri** | Kartı dondur / aktif et, kartı sil, aylık harcama limitini güncelle. Limit ücretin altına inerse *"Sonraki çekim reddedilecek"* uyarısı; fiyat zammına karşı koruma. |
-| **AI abonelik analizi** | Harcama alışkanlıkları, ödeme geçmişi, aynı kategorideki rakip abonelikler, fiyat seviyesi ve gelire oran birlikte değerlendirilerek doğal dilde kişisel öneri. |
-| **B2B · Şirket Paneli** | Kişisel veri paylaşılmadan, anonimleştirilmiş sinyallerle churn riski, rakip sayısı, kart durumu ve aylık/yıllık gelir kaybı riski. |
-| **AI risk açıklaması ve aksiyonlar** | Churn riskinin nedenleri ve müşteriyi tutmak için kişiselleştirilmiş 3 kampanya önerisi (indirim, yıllık paket, aile paketi…). |
-| **İşlem Geçmişi** | 6 aylık sentetik Open Banking verisi, arama, gelir/gider filtresi, aylık gider grafiği ve AI harcama özeti. |
+| **Müşteri paneli** | Aylık net gelir, abonelik gideri, gelire oranı ve dondurulan kartlardan gelen tasarruf. Kategori bazında maliyet dağılımı ve tüm sanal kartların limit kullanımı. |
+| **Sanal kart işlemleri** | Kartı dondur / aktif et, sil (geri alınabilir), aylık harcama limitini güncelle. Limit ücretin altına inerse *"Sonraki çekim reddedilecek"* uyarısı. |
+| **Zam tespiti** | Ödemelerde kalıcı fiyat artışı yakalanır (kur oynamaları ve tek seferlik sapmalar zam sayılmaz). Kart üzerinde eski → yeni fiyat gösterilir, tek tıkla limit eski fiyata sabitlenir. |
+| **AI abonelik analizi** | Harcama alışkanlıkları, ödeme geçmişi, zamlar, aynı kategorideki rakip abonelikler ve gelire oran birlikte değerlendirilerek doğal dilde kişisel öneri. |
+| **Şirket paneli** | Kişisel veri paylaşılmadan, anonimleştirilmiş sinyallerle churn riski, rakip sayısı, kart durumu ve aylık/yıllık gelir kaybı riski. |
+| **AI risk açıklaması ve aksiyonlar** | Churn riskinin nedenleri ve müşteriyi tutmak için kişiselleştirilmiş 3 kampanya önerisi (zam öncesi fiyat garantisi, yıllık paket, aile paketi…). |
+| **İşlem geçmişi** | 6 aylık sentetik Open Banking verisi, arama, gelir/gider filtresi, aylık gider grafiği ve AI harcama özeti. |
+| **Mobil** | Telefonda üst menü ve kaydırılabilir kategori kartlarıyla tam kullanım. |
 
 <table>
   <tr>
-    <td><img src="docs/screenshots/b2c-virtual-cards.png" alt="Sanal kartlar ve AI analizi"></td>
-    <td><img src="docs/screenshots/b2b-churn.png" alt="B2B churn analizi"></td>
+    <td width="50%"><img src="docs/screenshots/b2c-dashboard.png" alt="Müşteri paneli"></td>
+    <td width="50%"><img src="docs/screenshots/b2c-virtual-cards.png" alt="Sanal kartlar, zam tespiti ve AI analizi"></td>
   </tr>
   <tr>
-    <td align="center"><sub>Sanal kartlar, limit koruması ve AI analizi</sub></td>
-    <td align="center"><sub>Şirket paneli: churn riski ve önerilen aksiyonlar</sub></td>
+    <td align="center"><sub>Müşteri paneli ve zam uyarısı</sub></td>
+    <td align="center"><sub>Sanal kart, limiti eski fiyata sabitleme ve AI analizi</sub></td>
   </tr>
   <tr>
+    <td><img src="docs/screenshots/b2b-churn.png" alt="Şirket paneli"></td>
     <td><img src="docs/screenshots/b2b-ai-explanation.png" alt="AI risk açıklaması"></td>
-    <td><img src="docs/screenshots/transactions.png" alt="İşlem geçmişi"></td>
   </tr>
   <tr>
+    <td align="center"><sub>Şirket paneli: churn riski ve önerilen aksiyonlar</sub></td>
     <td align="center"><sub>AI risk açıklaması</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/transactions.png" alt="İşlem geçmişi"></td>
+    <td align="center">
+      <img src="docs/screenshots/mobile-b2c.png" alt="Telefon: müşteri paneli" width="45%">
+      <img src="docs/screenshots/mobile-b2b.png" alt="Telefon: şirket paneli" width="45%">
+    </td>
+  </tr>
+  <tr>
     <td align="center"><sub>İşlem geçmişi ve AI harcama özeti</sub></td>
+    <td align="center"><sub>Telefon görünümü</sub></td>
   </tr>
 </table>
 
@@ -69,27 +83,27 @@ analizi ve müşteriyi tutma stratejileri sunar.
 
 ```mermaid
 flowchart LR
-    A[Open Banking<br>işlem geçmişi] --> B[Abonelik tespiti<br>detector.py]
+    A[Open Banking<br>işlem geçmişi] --> B[Abonelik ve<br>zam tespiti]
     B --> C[Davranış profili<br>anonim sinyaller]
-    C --> D{AI motoru<br>ai_engine.py}
+    C --> D{AI motoru}
     D -->|API anahtarı var| E[Claude API]
-    D -->|anahtar yok / limit doldu| F[Demo motoru<br>demo_ai.py]
-    E --> G[B2C tasarruf önerisi]
-    E --> H[B2B churn skoru<br>+ retention aksiyonları]
+    D -->|anahtar yok / limit doldu| F[Demo motoru]
+    E --> G[Kullanıcıya<br>tasarruf önerisi]
+    E --> H[Şirkete churn skoru<br>ve aksiyonlar]
     F --> G
     F --> H
 ```
 
-1. **Tespit:** Son 6 ayın işlemleri içinde en az 3 kez, ~30 gün arayla ve benzer tutarla tekrarlanan ödemeler abonelik olarak işaretlenir ve kategorilere ayrılır.
-2. **Profil:** Her abonelik için ücret, gelire oran, rakip abonelikler, kart durumu, limit ve ödeme geçmişinden bir davranış profili çıkarılır. Şirketlere yalnızca bu anonim sinyaller iletilir.
-3. **Analiz:** Profil yapay zekâ motoruna gönderilir; sonuçlar aynı girdi için önbellekte tutulur.
+1. **Tespit:** En az 3 kez, ~30 gün arayla ve benzer tutarla tekrarlanan ödemeler abonelik sayılır. Tutarın kalıcı olarak %6'dan fazla yükseldiği nokta zam olarak işaretlenir.
+2. **Profil:** Her abonelik için ücret, gelire oran, zam, rakip abonelikler, kart durumu, limit ve ödeme geçmişinden bir profil çıkarılır. Şirketlere yalnızca bu anonim sinyaller iletilir.
+3. **Analiz:** Profil yapay zekâ motoruna gönderilir; aynı girdiye verilen cevap önbellekten gelir.
 
 ### Yapay zekâ modları
 
 | Mod | Ne zaman | Açıklama |
 |---|---|---|
 | **Claude** | `ANTHROPIC_API_KEY` tanımlıysa | Analizler Claude ile üretilir. Saatlik çağrı limiti (`AI_HOURLY_LIMIT`, varsayılan 200) herkese açık demoda maliyeti korur. |
-| **Demo** | Anahtar yoksa ya da limit dolduysa | Aynı biçimde cevaplar, davranış verisinden kural tabanlı olarak üretilir. Uygulama her zaman çalışır, maliyet sıfırdır. Arayüzde *Demo modu* etiketi görünür. |
+| **Demo** | Anahtar yoksa ya da limit dolduysa | Aynı biçimdeki cevaplar davranış verisinden kural tabanlı üretilir; uygulama her zaman çalışır ve maliyeti sıfırdır. Arayüzde *Demo modu* etiketi görünür. |
 
 ### Yerelde çalıştırma
 
@@ -100,31 +114,17 @@ python3 -m pip install -r requirements.txt
 python3 app.py            # http://localhost:8501
 ```
 
-Claude ile çalıştırmak için (isteğe bağlı):
+Claude ile çalıştırmak için: `export ANTHROPIC_API_KEY="sk-ant-..."` sonra `python3 app.py`.
 
-```bash
-export ANTHROPIC_API_KEY="sk-ant-..."
-python3 app.py
-```
-
-### Canlıya alma (Render)
-
-Proje şu an **https://ghostpay-670i.onrender.com** adresinde yayında. Kendi kopyanı yayına almak için:
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/busebb82/Ghostpay)
-
-1. Render hesabınla butona tıkla (ya da **New → Blueprint** ile bu repoyu seç). `render.yaml` gerisini ayarlar.
-2. İstersen **Environment** sekmesinden `ANTHROPIC_API_KEY` ekle; eklemezsen site demo modunda çalışır.
-3. Ücretsiz planda servis bir süre kullanılmazsa uyur; ilk açılış ~50 sn sürebilir.
-
-Docker ile: `docker build -t ghostpay . && docker run -p 8501:8501 ghostpay`
+Canlı sürüm Render'da `render.yaml` ile çalışır; `main` dalına her birleştirmede otomatik güncellenir.
 
 ### Proje yapısı
 
 ```
 app.py          Flask sunucusu: sayfa, sanal kart işlemleri ve AI için JSON API
-detector.py     Abonelik tespiti, kategoriler ve davranış profili
-ai_engine.py    Claude entegrasyonu, önbellek, saatlik limit, demo moduna geçiş
+catalog.py      Bilinen servisler: ad, kategori, liste fiyatı, çekim günü
+detector.py     Abonelik ve zam tespiti, AI'a giden davranış profili
+ai_engine.py    Claude entegrasyonu, önbellek, saatlik limit
 demo_ai.py      API anahtarı olmadan çalışan kural tabanlı analiz motoru
 mock_data.py    6 aylık sentetik Open Banking işlem geçmişi
 static/         Arayüz (HTML, CSS, JavaScript, yerel yazı tipleri)
@@ -139,9 +139,9 @@ pytest          # testler
 ruff check .    # lint
 ```
 
-Her ziyaretçi kendi demo verisini alır; bir ziyaretçinin kartlarda yaptığı
-değişiklikler diğerlerini etkilemez. Veriler bellekte tutulur ve 2 saat işlem
-yapılmayan oturumlar silinir.
+Her ziyaretçi kendi demo verisini alır; birinin kartlarda yaptığı değişiklik
+diğerlerini etkilemez. Veriler bellekte tutulur ve 2 saat işlem yapılmayan
+oturumlar silinir.
 
 ---
 
@@ -152,26 +152,24 @@ yapılmayan oturumlar silinir.
 Cancelling a subscription is often deliberately hard, so people keep paying for
 services they no longer use. GhostPay solves this **on the payment side**: every
 subscription gets its own Moka United virtual card that the user can freeze,
-delete or cap with a spending limit in one tap. An AI layer evaluates each
-subscription and gives users personal saving advice, while subscription
-providers get anonymized churn analysis and retention strategies.
+delete or cap in one tap. When a service raises its price, GhostPay spots it in
+the transaction history and offers to lock the card limit at the old price. An AI
+layer evaluates each subscription and gives users personal saving advice, while
+subscription providers get anonymized churn analysis and retention strategies.
 
 ### Features
 
-- **B2C dashboard:** net income, monthly subscription spend, share of income, savings from frozen cards, cost breakdown by category and limit usage of every virtual card.
-- **Virtual card controls:** freeze / reactivate, delete, and update the monthly limit, with a warning when the limit drops below the price (the next charge will be declined).
-- **AI subscription analysis:** combines spending habits, payment history, competing subscriptions in the same category, price level and share of income into natural-language advice.
-- **B2B dashboard:** churn risk, number of competitors, card status and monthly/yearly revenue-at-risk, built only from anonymized signals.
-- **AI risk explanation & retention actions:** the reasons behind the churn score and three personalized campaigns to keep the customer.
-- **Transaction history:** 6 months of synthetic Open Banking data with search, income/expense filters, a monthly spending chart and an AI spending summary.
+- **Customer dashboard:** net income, monthly subscription spend, share of income, savings from frozen cards, cost breakdown by category and limit usage of every virtual card.
+- **Virtual card controls:** freeze / reactivate, delete (with undo) and update the monthly limit, with a warning when the limit drops below the price.
+- **Price hike detection:** permanent price increases are detected from the charges; currency noise and one-off spikes are ignored. One click locks the limit at the old price.
+- **AI subscription analysis:** spending habits, payment history, price hikes, competing subscriptions and share of income, explained in natural language.
+- **Company dashboard:** churn risk, number of competitors, card status and revenue at risk, built only from anonymized signals, plus AI explanations and three retention actions.
+- **Transaction history:** 6 months of synthetic Open Banking data with search, filters, a monthly spending chart and an AI summary.
+- **Mobile:** full experience on phones.
 
 ### AI modes
 
-With `ANTHROPIC_API_KEY` set, analyses are generated by **Claude**, cached per input and protected by an hourly call limit (`AI_HOURLY_LIMIT`, default 200). Without a key (or once the limit is reached) a rule-based **demo engine** returns answers in the same format from the same behavioural data, so the public demo always works at zero cost.
-
-### Live demo
-
-**https://ghostpay-670i.onrender.com**. The free instance sleeps when idle, so the first load can take ~50 seconds.
+With `ANTHROPIC_API_KEY` set, analyses are generated by **Claude**, cached per input and capped per hour (`AI_HOURLY_LIMIT`, default 200). Without a key, or once the cap is reached, a rule-based **demo engine** answers in the same format, so the public demo always works at zero cost.
 
 ### Run locally
 
@@ -182,13 +180,11 @@ python3 -m pip install -r requirements.txt
 python3 app.py            # http://localhost:8501
 ```
 
-### Deploy
-
-Click **Deploy to Render** above (or create a Blueprint from this repo); `render.yaml` configures the service. Optionally add `ANTHROPIC_API_KEY` under *Environment*. A `Dockerfile` is included for other platforms.
+Tests: `pip install -r requirements-dev.txt && pytest`. The live version runs on Render via `render.yaml`.
 
 ### Tech stack
 
-Python · Flask · Gunicorn · Anthropic Claude API · vanilla JavaScript with hand-drawn SVG charts · pytest · GitHub Actions
+Python · Flask · Gunicorn · Anthropic Claude API · vanilla JavaScript with hand-drawn SVG charts · pytest · Ruff · GitHub Actions · Render
 
 ---
 
