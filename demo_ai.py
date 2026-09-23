@@ -27,21 +27,35 @@ def _rivals(f: dict) -> list[dict]:
     return f.get("ayni_kategorideki_diger_abonelikler", [])
 
 
+RISK_HIGH = 65
+RISK_MEDIUM = 40
+
+
+def _active_rivals(f: dict) -> list[dict]:
+    return [r for r in _rivals(f) if r["durum"] == "Aktif"]
+
+
 def churn_score(f: dict) -> int:
-    rivals = _rivals(f)
+    """Kartı dondurmak en güçlü iptal sinyali; kesintisiz ödeme geçmişi riski düşürür."""
+    fee = f["aylik_ucret_tl"]
+    active = _active_rivals(f)
     score = 20.0
     if f["sanal_kart_durumu"] == "Donduruldu":
-        score += 30
-    score += min(20, 8 * len(rivals))
-    if rivals:
-        avg = statistics.mean(r["aylik_ucret_tl"] for r in rivals)
-        if f["aylik_ucret_tl"] > avg:
-            score += min(15, 15 * (f["aylik_ucret_tl"] / avg - 1))
-    score += min(10, 10 * f["maasa_orani_yuzde"])
+        score += 50
+    # Dondurulmuş rakip, kullanıcının o servisi bıraktığını gösterir; rekabet sayılmaz
+    score += min(14, 7 * len(active))
+    if active:
+        avg = statistics.mean(r["aylik_ucret_tl"] for r in active)
+        if fee > avg:
+            score += min(10, 10 * (fee / avg - 1))
+        elif f["sanal_kart_durumu"] == "Aktif" and fee <= min(r["aylik_ucret_tl"] for r in active):
+            score -= 4
+    score += min(6, 4 * f["maasa_orani_yuzde"])
     if f["limit_ucretin_altinda_mi"]:
-        score += 10
+        score += 18
     if f.get("fiyat_artisi"):
-        score += min(12, f["fiyat_artisi"]["oran_yuzde"] / 2)
+        score += min(20, 1.25 * f["fiyat_artisi"]["oran_yuzde"])
+    score -= min(8, f["kesintisiz_odeme_ay_sayisi"])
     return int(max(5, min(95, round(score))))
 
 
@@ -103,24 +117,41 @@ def churn_analysis(f: dict) -> dict:
     score = churn_score(f)
     frozen = f["sanal_kart_durumu"] == "Donduruldu"
 
+    months = f["kesintisiz_odeme_ay_sayisi"]
     degerlendirme = []
     if frozen:
         tarih = f.get("dondurma_tarihi") or ""
         tarih = ".".join(reversed(tarih.split("-"))) if tarih else "yakın zamanda"
         degerlendirme.append(f"Kullanıcı sanal kartı dondurdu ve %{score} churn skoru ile kaybedilme "
                              f"eşiğinde, {tarih} tarihinden bu yana ödeme yapılmıyor")
+    elif f["limit_ucretin_altinda_mi"]:
+        degerlendirme.append(f"Kullanıcı kart limitini {tl(f['sanal_kart_aylik_limiti_tl'])} ile ücretin altına "
+                             "çekti; sonraki çekim reddedilecek ve bu güçlü bir iptal sinyali")
+    elif score < RISK_MEDIUM:
+        degerlendirme.append(f"Son {months} ayda kesintisiz ödeme yapılıyor; %{score} churn skoru "
+                             "sadık bir kullanıcıya işaret ediyor")
     else:
-        degerlendirme.append(f"Son {f['kesintisiz_odeme_ay_sayisi']} ayda kesintisiz ödeme yapılmasına rağmen "
+        degerlendirme.append(f"Son {months} ayda kesintisiz ödeme yapılmasına rağmen "
                              f"%{score} churn skoru, fiyat hassasiyeti sinyali veriyor")
     if rivals:
         avg = statistics.mean(r["aylik_ucret_tl"] for r in rivals)
         diff = 100 * (fee / avg - 1)
-        degerlendirme.append(
-            f"{tl(fee)} aylık ücret, kullanıcının {f['kategori'].lower()} kategorisindeki diğer aboneliklerinin "
-            f"ortalaması olan {tl(avg)}'den {pct(abs(diff))} {'daha pahalı' if diff >= 0 else 'daha ucuz'}")
-        names = ", ".join(r["hizmet"] for r in rivals)
-        degerlendirme.append(f"Aynı kategoride {len(rivals)} rakip servise ({names}) ödeme yapılıyor, "
-                             "bu da alternatif kullanım gösteriyor")
+        if len(rivals) == 1:
+            other = f"diğer aboneliği {rivals[0]['hizmet']} ({tl(avg)})"
+        else:
+            other = f"diğer aboneliklerinin ortalaması ({tl(avg)})"
+        compare = ("ile hemen hemen aynı" if abs(diff) < 2
+                   else f"ile karşılaştırıldığında {pct(abs(diff))} {'daha pahalı' if diff > 0 else 'daha ucuz'}")
+        degerlendirme.append(f"{tl(fee)} aylık ücret, kullanıcının {f['kategori'].lower()} kategorisindeki {other} {compare}")
+        active = _active_rivals(f)
+        paused = [r["hizmet"] for r in rivals if r["durum"] != "Aktif"]
+        if active:
+            names = ", ".join(r["hizmet"] for r in active)
+            line = f"Aynı kategoride {len(active)} rakip servise ({names}) hâlâ ödeme yapılıyor"
+            line += f"; {', '.join(paused)} kartı dondurulmuş" if paused else ", bu da alternatif kullanım gösteriyor"
+        else:
+            line = f"Kategorideki diğer abonelikler ({', '.join(paused)}) dondurulmuş; bu servis kategoride tek aktif seçenek"
+        degerlendirme.append(line)
     else:
         degerlendirme.append(f"Kategoride rakip abonelik yok; ücret maaşın {pct(f['maasa_orani_yuzde'], 2)}'i")
         degerlendirme.append(f"Toplam abonelik yükü maaşın {pct(f['toplam_abonelik_yukunun_maasa_orani_yuzde'])}'i, "
@@ -137,7 +168,7 @@ def churn_analysis(f: dict) -> dict:
         first = {"baslik": "Zam Öncesi Fiyat Garantisi",
                  "aciklama": f"3 ay boyunca eski fiyat olan {tl(hike['eski_fiyat'])} ile devam etme "
                              "teklifiyle zam kaynaklı iptal riskini azaltın"}
-    elif frozen or score >= 70:
+    elif frozen or score >= RISK_HIGH:
         disc = round(fee * 0.6, 2)
         first = {"baslik": "2 Ay %40 İndirim",
                  "aciklama": f"{tl(fee)} yerine {tl(disc)} ile"
