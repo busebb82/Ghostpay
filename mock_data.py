@@ -1,56 +1,98 @@
 """
 mock_data.py
-Sahte banka islem verisi uretir. Gercek hayatta bu veri Open Banking
-API'sinden gelirdi. Cikti: pandas DataFrame -> [tarih, aciklama, tutar]
+6 aylik sentetik Open Banking islem gecmisi uretir. Gercek hayatta bu veri
+Open Banking API'sinden gelirdi. Veri seti maas, market, ulasim, restoran,
+fatura ve dijital abonelik odemelerini icerir.
+
+Cikti: [{tarih, aciklama, tip, tutar}] listesi (tutar: gelir +, gider -)
 """
+import calendar
 import random
-from datetime import date, timedelta
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
-import pandas as pd
+AYLIK_NET_MAAS = 65000.00
 
-random.seed(42)
+# Sunucu (or. Render) UTC'de calissa da tarihler Turkiye saatine gore hesaplanir
+TIMEZONE = ZoneInfo("Europe/Istanbul")
 
-SUBS = [
-    {"merchant": "NETFLIX.COM",     "amount": 229.99, "day": 3},
-    {"merchant": "DISNEY PLUS",     "amount": 134.99, "day": 7},
-    {"merchant": "AMAZON PRIME",    "amount": 39.99,  "day": 12},
-    {"merchant": "BLUTV",           "amount": 99.90,  "day": 18},
-    {"merchant": "SPOTIFY",         "amount": 59.99,  "day": 5},
-    {"merchant": "YOUTUBE PREMIUM", "amount": 57.99,  "day": 21},
-    {"merchant": "ICLOUD",          "amount": 12.99,  "day": 9},
-    {"merchant": "ADOBE CREATIVE",  "amount": 379.00, "day": 15},
+
+def local_today() -> date:
+    return datetime.now(TIMEZONE).date()
+
+# Banka dokumunde gorunen abonelik odemeleri. Gercek fiyat ayliga gore kur ve
+# vergi farki nedeniyle biraz oynar; "fiyat" platformun liste fiyatidir.
+SUBSCRIPTION_CHARGES = {
+    "NETFLIX":         {"fiyat": 289.99,  "gun": 3},
+    "DISNEY+":         {"fiyat": 249.90,  "gun": 7},
+    "YOUTUBE PREMIUM": {"fiyat": 119.99,  "gun": 21},
+    "SPOTIFY":         {"fiyat": 99.00,   "gun": 5},
+    "YOUTUBE MUSIC":   {"fiyat": 89.99,   "gun": 11},
+    "APPLE MUSIC":     {"fiyat": 59.99,   "gun": 14},
+    "CANVA PRO":       {"fiyat": 757.50,  "gun": 19},
+    "ADOBE CREATIVE":  {"fiyat": 379.00,  "gun": 23},
+    "CHATGPT PLUS":    {"fiyat": 1019.49, "gun": 16},
+    "CLAUDE PRO":      {"fiyat": 1010.00, "gun": 15},
+    "GEMINI":          {"fiyat": 1000.00, "gun": 25},
+}
+
+# Abonelik disi harcamalar: (aciklama, min tutar, max tutar, aylik ortalama adet)
+DAILY_SPENDING = [
+    ("MIGROS",       100, 900, 2),
+    ("BIM",          150, 800, 2),
+    ("CARREFOURSA",  200, 700, 1),
+    ("GETIR",        150, 700, 1),
+    ("YEMEKSEPETI",  300, 900, 2),
+    ("STARBUCKS",     80, 480, 2),
+    ("TRENDYOL",     250, 900, 1),
+    ("SHELL",        300, 900, 1),
+    ("PEGASUS",      400, 1200, 1),
+    ("TÜRK TELEKOM", 120, 750, 1),
 ]
 
-NOISE_MERCHANTS = ["MIGROS", "GETIR", "SHELL", "TRENDYOL", "STARBUCKS", "YEMEKSEPETI"]
+
+def window_months(today: date, months: int = 6) -> list[tuple[int, int]]:
+    """Bugunden onceki son `months` tam ayi (yil, ay) olarak dondurur."""
+    y, m = today.year, today.month
+    out = []
+    for _ in range(months):
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+        out.append((y, m))
+    return list(reversed(out))
 
 
-def generate_transactions(months: int = 6) -> pd.DataFrame:
+def generate_transactions(today: date | None = None, months: int = 6) -> list[dict]:
+    """Son `months` tam ay ile icinde bulunulan ayin bugune kadarki islemleri."""
+    today = today or local_today()
+    rng = random.Random(42)
     rows = []
-    today = date.today()
-    start = today - timedelta(days=30 * months)
 
-    for sub in SUBS:
-        d = date(start.year, start.month, 1)
-        while d <= today:
-            try:
-                charge_date = d.replace(day=sub["day"])
-            except ValueError:
-                charge_date = d.replace(day=28)
-            if start <= charge_date <= today:
-                rows.append({
-                    "tarih": charge_date,
-                    "aciklama": sub["merchant"],
-                    "tutar": sub["amount"],
-                })
-            d = (d.replace(day=28) + timedelta(days=4)).replace(day=1)
+    for y, m in window_months(today, months) + [(today.year, today.month)]:
+        last_day = calendar.monthrange(y, m)[1]
+        if (y, m) == (today.year, today.month):
+            last_day = today.day
 
-    for _ in range(80):
-        rows.append({
-            "tarih": start + timedelta(days=random.randint(0, 30 * months)),
-            "aciklama": random.choice(NOISE_MERCHANTS),
-            "tutar": round(random.uniform(50, 900), 2),
-        })
+        rows.append({"tarih": date(y, m, 1), "aciklama": "MAAS ODEMESI",
+                     "tip": "Gelir", "tutar": AYLIK_NET_MAAS})
 
-    df = pd.DataFrame(rows)
-    df["tarih"] = pd.to_datetime(df["tarih"])
-    return df.sort_values("tarih").reset_index(drop=True)
+        for merchant, sub in SUBSCRIPTION_CHARGES.items():
+            tutar = sub["fiyat"] * rng.uniform(0.92, 1.08)
+            if sub["gun"] > last_day and (y, m) == (today.year, today.month):
+                continue
+            rows.append({"tarih": date(y, m, min(sub["gun"], last_day)),
+                         "aciklama": merchant, "tip": "Gider",
+                         "tutar": -round(tutar, 2)})
+
+        for merchant, lo, hi, avg_count in DAILY_SPENDING:
+            count = rng.choice([avg_count - 1, avg_count, avg_count + 1])
+            if (y, m) == (today.year, today.month):
+                count = round(count * today.day / calendar.monthrange(y, m)[1])
+            for _ in range(count):
+                rows.append({"tarih": date(y, m, rng.randint(1, last_day)),
+                             "aciklama": merchant, "tip": "Gider",
+                             "tutar": -round(rng.uniform(lo, hi), 2)})
+
+    rows.sort(key=lambda r: r["tarih"], reverse=True)
+    return rows
