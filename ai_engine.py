@@ -44,7 +44,11 @@ sinyalleri verilecek: gelire göre abonelik maliyeti, aynı kategorideki rakip p
 fiyat seviyesi, varsa son zam, ödeme alışkanlıkları ve sanal kartın aktif ya da
 dondurulmuş olması.
 
-- "churn_risk": müşterinin aboneliği iptal etme olasılığı, 0-100 arası tamsayı.
+- "churn_risk": müşterinin aboneliği iptal etme olasılığı, 0-100 arası tamsayı. Ölçek:
+  0-39 düşük (düzenli ödeme, zam yok, kategoride en ucuz ya da tek seçenek),
+  40-64 orta (son zam, pahalı fiyat, aktif rakip abonelik ya da limit ücretin altında),
+  65-100 yüksek (sanal kart dondurulmuş). Kesintisiz ödeme geçmişi riski düşürür;
+  dondurulmuş rakip abonelik rekabet sayılmaz. Her müşteriyi riskli gösterme.
 - "degerlendirme": skorun temel nedenlerini şirkete açıklayan tam 3 madde.
 - "aksiyonlar": müşteriyi tutmak için tam 3 kişiselleştirilmiş retention aksiyonu.
   Her biri kısa bir "baslik" (örn. "2 Ay %40 İndirim", "Yıllık Pakete Geçiş Bonusu",

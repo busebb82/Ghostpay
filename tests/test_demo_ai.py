@@ -25,6 +25,15 @@ def test_user_analysis_shape():
     assert "%0.45" in out["maddeler"][0]
 
 
+def test_churn_scores_spread_across_levels():
+    scores = {s["ad"]: demo_ai.churn_score(features(s["ad"])) for s in SUBS}
+    frozen = [scores[s["ad"]] for s in SUBS if s["durum"] == "Donduruldu"]
+    assert min(frozen) >= demo_ai.RISK_HIGH
+    assert scores["Apple Music"] < demo_ai.RISK_MEDIUM
+    assert scores["Adobe Creative"] < demo_ai.RISK_MEDIUM
+    assert demo_ai.RISK_MEDIUM <= scores["Netflix"] < demo_ai.RISK_HIGH
+
+
 def test_churn_is_higher_when_card_is_frozen():
     active = demo_ai.churn_analysis(features("Netflix"))
     frozen = demo_ai.churn_analysis(features("Disney+"))
