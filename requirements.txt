@@ -1,4 +1,4 @@
-streamlit
-pandas
-anthropic
-plotly
+flask>=3.0
+anthropic>=1.8
+gunicorn>=22.0
+tzdata>=2024.1

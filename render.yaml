@@ -1,0 +1,18 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: ghostpay
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Tek worker: demo oturumlari bellekte tutuldugu icin tum istekler ayni surece gitmeli
+    startCommand: gunicorn app:app --workers 1 --threads 8 --timeout 120 --bind 0.0.0.0:$PORT
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: ANTHROPIC_API_KEY   # bos birakilirsa uygulama demo modunda calisir
+        sync: false
+      - key: AI_HOURLY_LIMIT     # saatlik en fazla Claude cagrisi
+        value: "200"
