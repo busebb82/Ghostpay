@@ -4,6 +4,7 @@ Islem gecmisinden duzenli (aylik) odemeleri tespit eder, abonelik olup
 olmadiklarini belirler ve kategorilere ayirir. Ayrica her abonelik icin
 yapay zekaya gonderilecek davranissal ozellikleri (feature) cikarir.
 """
+import calendar
 import statistics
 import zlib
 from collections import defaultdict
@@ -44,21 +45,19 @@ CARD_NUMBERS = {
 }
 
 
-def add_month(d: date) -> date:
-    y, m = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
-    for day in (d.day, 30, 29, 28):
-        try:
-            return date(y, m, day)
-        except ValueError:
-            continue
+def add_months(d: date, n: int = 1) -> date:
+    """Ayin gununu korur; kisa aylarda ayin son gunune yuvarlar (31 Oca -> 28 Sub)."""
+    y, m = divmod(d.month - 1 + n, 12)
+    year, month = d.year + y, m + 1
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
 
 
 def next_due(last_payment: date, today: date) -> date:
     """Son odemeden sonra bugunden ileri dusen ilk odeme tarihi."""
-    d = add_month(last_payment)
-    while d <= today:
-        d = add_month(d)
-    return d
+    n = 1
+    while add_months(last_payment, n) <= today:
+        n += 1
+    return add_months(last_payment, n)
 
 
 def slug(merchant: str) -> str:
@@ -159,24 +158,6 @@ def build_features(sub: dict, subs: list[dict], transactions: list[dict],
         "toplam_abonelik_yukunun_maasa_orani_yuzde": round(100 * total_active / salary, 2),
         "genel_harcama_trendi": _spending_trend(transactions),
     }
-
-
-def heuristic_churn(sub: dict, subs: list[dict], salary: float) -> int:
-    """Yapay zeka yaniti gelene kadar (veya API anahtari yoksa) kullanilan
-    kural tabanli tahmini churn skoru."""
-    same_cat = [s for s in subs if s["kategori"] == sub["kategori"] and s["id"] != sub["id"]]
-    score = 20.0
-    if sub["durum"] == "Donduruldu":
-        score += 30
-    score += min(20, 8 * len(same_cat))
-    if same_cat:
-        avg = statistics.mean(s["fiyat"] for s in same_cat)
-        if sub["fiyat"] > avg:
-            score += min(15, 15 * (sub["fiyat"] / avg - 1))
-    score += min(10, 10 * 100 * sub["fiyat"] / salary)
-    if sub["limit"] < sub["fiyat"]:
-        score += 10
-    return int(max(5, min(95, round(score))))
 
 
 def monthly_totals(transactions: list[dict], months: list[tuple[int, int]]) -> list[dict]:

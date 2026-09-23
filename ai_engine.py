@@ -1,17 +1,27 @@
 """
 ai_engine.py
-Claude API katmani. Uc yerde kullanilir:
+Yapay zeka katmani. Uc yerde kullanilir:
   1. B2C: aboneligin kullaniciya ozel analizi (kartin yanindaki AI simgesi)
   2. B2B: anonim sinyallerden churn skoru, risk aciklamasi ve retention aksiyonlari
   3. Islem gecmisi: son 6 ayin kisisel harcama ozeti
+
+ANTHROPIC_API_KEY varsa Claude kullanilir; yoksa demo_ai.py'deki kural tabanli
+motor ayni bicimde cevap uretir. Ayni girdiye verilen cevaplar onbellekte
+tutulur ve Claude cagrilari saatlik limitle korunur (herkese acik demo icin).
 Tum hatalar AIError olarak Turkce mesajla yukari iletilir.
 """
+import hashlib
 import json
 import os
+import threading
+import time
 import tomllib
+from collections import deque
 from pathlib import Path
 
 import anthropic
+
+import demo_ai
 
 MODEL = "claude-opus-5"
 SECRETS_FILE = Path(__file__).parent / ".streamlit" / "secrets.toml"
@@ -103,11 +113,6 @@ def _api_key() -> str | None:
         return None
 
 
-def get_client() -> anthropic.Anthropic | None:
-    key = _api_key()
-    return anthropic.Anthropic(api_key=key) if key else None
-
-
 def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload: dict) -> dict:
     try:
         response = client.beta.messages.create(
@@ -147,15 +152,66 @@ def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload:
         raise AIError("Yapay zekâ çıktısı çözümlenemedi. Lütfen tekrar deneyin.")
 
 
-def analyze_subscription(client, features: dict) -> dict:
-    return _ask_claude(client, SYSTEM_USER, SCHEMA_USER, features)
+class AIEngine:
+    """Claude ya da demo motorunu ayni arayuzle sunar."""
 
+    def __init__(self, client: anthropic.Anthropic | None = None,
+                 hourly_limit: int | None = None):
+        self.client = client
+        self.mode = "claude" if client else "demo"
+        self.hourly_limit = hourly_limit if hourly_limit is not None else \
+            int(os.environ.get("AI_HOURLY_LIMIT", "200"))
+        self._cache: dict[str, dict] = {}
+        self._calls: deque[float] = deque()
+        self._lock = threading.Lock()
 
-def churn_analysis(client, signals: dict) -> dict:
-    result = _ask_claude(client, SYSTEM_COMPANY, SCHEMA_COMPANY, signals)
-    result["churn_risk"] = max(0, min(100, int(result["churn_risk"])))
-    return result
+    @classmethod
+    def from_environment(cls) -> "AIEngine":
+        key = _api_key()
+        return cls(anthropic.Anthropic(api_key=key) if key else None)
 
+    def _allow_call(self) -> bool:
+        with self._lock:
+            now = time.time()
+            while self._calls and now - self._calls[0] > 3600:
+                self._calls.popleft()
+            if len(self._calls) >= self.hourly_limit:
+                return False
+            self._calls.append(now)
+            return True
 
-def spending_summary(client, payload: dict) -> dict:
-    return _ask_claude(client, SYSTEM_SUMMARY, SCHEMA_SUMMARY, payload)
+    def _run(self, kind: str, payload: dict, claude_call, demo_call) -> dict:
+        key = kind + ":" + hashlib.sha256(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+        with self._lock:
+            if key in self._cache:
+                return dict(self._cache[key])
+        if self.client and self._allow_call():
+            result = claude_call(payload)
+        else:
+            # Demo modu ya da saatlik Claude limiti doldu: kural tabanli motor
+            result = demo_call(payload)
+        with self._lock:
+            self._cache[key] = result
+            while len(self._cache) > 2000:        # en eski kaydi at
+                self._cache.pop(next(iter(self._cache)))
+        return dict(result)
+
+    def analyze_subscription(self, features: dict) -> dict:
+        return self._run("user", features,
+                         lambda p: _ask_claude(self.client, SYSTEM_USER, SCHEMA_USER, p),
+                         demo_ai.analyze_subscription)
+
+    def churn_analysis(self, signals: dict) -> dict:
+        def claude(p):
+            result = _ask_claude(self.client, SYSTEM_COMPANY, SCHEMA_COMPANY, p)
+            result["churn_risk"] = max(0, min(100, int(result["churn_risk"])))
+            return result
+        # Anonim kullanici kimligi analiz sonucunu degistirmez; onbellek anahtarina girmesin
+        payload = {k: v for k, v in signals.items() if k != "anonim_kullanici_id"}
+        return self._run("churn", payload, claude, demo_ai.churn_analysis)
+
+    def spending_summary(self, payload: dict) -> dict:
+        return self._run("summary", payload,
+                         lambda p: _ask_claude(self.client, SYSTEM_SUMMARY, SCHEMA_SUMMARY, p),
+                         demo_ai.spending_summary)
