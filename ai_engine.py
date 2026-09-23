@@ -1,34 +1,25 @@
-"""
-ai_engine.py
-Yapay zeka katmani. Uc yerde kullanilir:
-  1. B2C: aboneligin kullaniciya ozel analizi (kartin yanindaki AI simgesi)
-  2. B2B: anonim sinyallerden churn skoru, risk aciklamasi ve retention aksiyonlari
-  3. Islem gecmisi: son 6 ayin kisisel harcama ozeti
+"""Yapay zekâ katmanı: Claude varsa Claude, yoksa demo motoru.
 
-ANTHROPIC_API_KEY varsa Claude kullanilir; yoksa demo_ai.py'deki kural tabanli
-motor ayni bicimde cevap uretir. Ayni girdiye verilen cevaplar onbellekte
-tutulur ve Claude cagrilari saatlik limitle korunur (herkese acik demo icin).
-Tum hatalar AIError olarak Turkce mesajla yukari iletilir.
+Aynı girdiye verilen cevaplar önbellekte tutulur; Claude çağrıları saatlik
+limitle sınırlanır, limit dolunca demo motoruna düşülür. Hatalar kullanıcıya
+gösterilecek Türkçe mesajla AIError olarak iletilir.
 """
 import hashlib
 import json
 import os
 import threading
 import time
-import tomllib
 from collections import deque
-from pathlib import Path
 
 import anthropic
 
 import demo_ai
 
 MODEL = "claude-opus-5"
-SECRETS_FILE = Path(__file__).parent / ".streamlit" / "secrets.toml"
 
 
 class AIError(Exception):
-    """Arayuzde kullaniciya gosterilecek Turkce hata mesaji tasir."""
+    pass
 
 
 STYLE = """Türkçe yaz. Para tutarlarını Türk formatında yaz (örn. 289,99 ₺, 1.019,49 ₺),
@@ -38,7 +29,8 @@ sayıları kullan, veri dışında bilgi uydurma."""
 SYSTEM_USER = f"""Sen GhostPay adlı abonelik yönetim platformunun kişisel analiz motorusun.
 Sana kullanıcının bir aboneliğine ait davranışsal özellikler JSON olarak verilecek:
 harcama alışkanlıkları, geçmiş ödemeler, aynı kategorideki rakip abonelikler,
-fiyat seviyesi ve ücretin maaşa oranı. Tüm sinyalleri birlikte değerlendir.
+fiyat seviyesi, varsa son zam ve ücretin maaşa oranı. Tüm sinyalleri birlikte
+değerlendir.
 
 - "ozet": kullanıcıya doğrudan hitap eden 1 cümlelik kişisel tasarruf önerisi
   (örn. "Maaşının çok küçük bir kısmını kaplıyor ama aynı kategoride 3 aboneliğin var,
@@ -49,7 +41,8 @@ fiyat seviyesi ve ücretin maaşa oranı. Tüm sinyalleri birlikte değerlendir.
 SYSTEM_COMPANY = f"""Sen GhostPay'in abonelik şirketlerine yönelik (B2B) churn analiz motorusun.
 Sana bir abonelik şirketinin müşterisine ait ANONİMLEŞTİRİLMİŞ finansal davranış
 sinyalleri verilecek: gelire göre abonelik maliyeti, aynı kategorideki rakip platformlar,
-fiyat seviyesi, ödeme alışkanlıkları ve sanal kartın aktif ya da dondurulmuş olması.
+fiyat seviyesi, varsa son zam, ödeme alışkanlıkları ve sanal kartın aktif ya da
+dondurulmuş olması.
 
 - "churn_risk": müşterinin aboneliği iptal etme olasılığı, 0-100 arası tamsayı.
 - "degerlendirme": skorun temel nedenlerini şirkete açıklayan tam 3 madde.
@@ -101,18 +94,6 @@ SCHEMA_SUMMARY = {
 }
 
 
-def _api_key() -> str | None:
-    """Anahtari ANTHROPIC_API_KEY ortam degiskeninden, yoksa
-    .streamlit/secrets.toml dosyasindan okur."""
-    if os.environ.get("ANTHROPIC_API_KEY"):
-        return os.environ["ANTHROPIC_API_KEY"]
-    try:
-        with open(SECRETS_FILE, "rb") as f:
-            return tomllib.load(f).get("ANTHROPIC_API_KEY")
-    except (FileNotFoundError, tomllib.TOMLDecodeError):
-        return None
-
-
 def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload: dict) -> dict:
     try:
         response = client.beta.messages.create(
@@ -153,8 +134,6 @@ def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload:
 
 
 class AIEngine:
-    """Claude ya da demo motorunu ayni arayuzle sunar."""
-
     def __init__(self, client: anthropic.Anthropic | None = None,
                  hourly_limit: int | None = None):
         self.client = client
@@ -167,7 +146,7 @@ class AIEngine:
 
     @classmethod
     def from_environment(cls) -> "AIEngine":
-        key = _api_key()
+        key = os.environ.get("ANTHROPIC_API_KEY")
         return cls(anthropic.Anthropic(api_key=key) if key else None)
 
     def _allow_call(self) -> bool:
@@ -186,14 +165,10 @@ class AIEngine:
         with self._lock:
             if key in self._cache:
                 return dict(self._cache[key])
-        if self.client and self._allow_call():
-            result = claude_call(payload)
-        else:
-            # Demo modu ya da saatlik Claude limiti doldu: kural tabanli motor
-            result = demo_call(payload)
+        result = claude_call(payload) if self.client and self._allow_call() else demo_call(payload)
         with self._lock:
             self._cache[key] = result
-            while len(self._cache) > 2000:        # en eski kaydi at
+            while len(self._cache) > 2000:
                 self._cache.pop(next(iter(self._cache)))
         return dict(result)
 
@@ -207,7 +182,7 @@ class AIEngine:
             result = _ask_claude(self.client, SYSTEM_COMPANY, SCHEMA_COMPANY, p)
             result["churn_risk"] = max(0, min(100, int(result["churn_risk"])))
             return result
-        # Anonim kullanici kimligi analiz sonucunu degistirmez; onbellek anahtarina girmesin
+        # Anonim kimlik sonucu değiştirmez; önbellek anahtarına girerse her ziyaretçi ayrı çağrı yapar
         payload = {k: v for k, v in signals.items() if k != "anonim_kullanici_id"}
         return self._run("churn", payload, claude, demo_ai.churn_analysis)
 
