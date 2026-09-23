@@ -21,6 +21,7 @@ const ICON = {
   list: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01"/></svg>',
   down: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 7L7 17M7 9v8h8"/></svg>',
   up: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01M10.3 3.9L1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>',
   trend: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8M15 7h6v6"/></svg>',
   lock: '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>',
 };
@@ -46,7 +47,7 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
 const tl = (n) => Number(n).toLocaleString("tr-TR",
   { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₺";
 const tlInt = (n) => Math.round(n).toLocaleString("tr-TR") + " ₺";
-const pct = (n, d = 1) => Number(Number(n).toFixed(d)).toString();
+const pct = (n, d = 1) => Number(Number(n).toFixed(d)).toString().replace(".", ",");
 const money = (n) => `<span class="money">${tl(n)}</span>`;
 
 function parseDate(iso) {
@@ -79,7 +80,8 @@ function ago(iso) {
   const h = Math.floor(min / 60);
   return h < 24 ? `${h} sa önce` : `${Math.floor(h / 24)} gün önce`;
 }
-const limitText = (n) => String(n).replace(".", ",");
+const limitText = (n) => Number(n).toFixed(2).replace(".", ",");
+const isPhone = () => window.matchMedia("(max-width: 860px)").matches;
 function parseAmount(text) {
   let t = String(text).trim();
   if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
@@ -220,7 +222,7 @@ function renderB2C() {
 
   const legend = (c) => c ? `<div class="legend-item">
       <div class="name"><i class="dot" style="background:${CAT_COLORS[c.name]}"></i>${esc(c.name)}</div>
-      <div class="amount">${money(c.total)} <span>· ${pct((100 * c.total) / donutTotal)}%</span></div>
+      <div class="amount">${money(c.total)} <span>· %${pct((100 * c.total) / donutTotal)}</span></div>
     </div>` : "";
 
   const selected = cats.find((c) => c.name === ui.category);
@@ -383,7 +385,7 @@ function usageHtml(s, limit) {
 
 function warnHtml(s, limit) {
   return limit < s.fiyat
-    ? `<div class="limit-warn" role="status">Limit Ücretin Altında: Sonraki çekim reddedilecek.</div>` : "";
+    ? `<div class="limit-warn" role="status">${ICON.alert}<span>Limit ücretin altında. Sonraki çekim reddedilecek.</span></div>` : "";
 }
 
 function onLimitInput(input) {
@@ -457,9 +459,9 @@ function renderB2B() {
     <div class="kpis five">
       <div class="panel kpi"><div class="label">Churn Riski</div><div class="value">%${c.churn_risk}</div><div class="sub">${level.text}${hasAi ? "" : " · tahmini"}</div></div>
       <div class="panel kpi"><div class="label">Aylık Ücret</div><div class="value">${money(s.fiyat)}</div><div class="sub">Maaşa oranı %${pct((100 * s.fiyat) / salary(), 2)}${s.zam ? ` · %${pct(s.zam.oran_yuzde)} zamlı` : ""}</div></div>
-      <div class="panel kpi"><div class="label">Kategorideki Rakip Sayısı</div><div class="value">${rivals}</div><div class="sub">${esc(s.kategori)}</div></div>
+      <div class="panel kpi"><div class="label">Rakip Abonelik</div><div class="value">${rivals}</div><div class="sub">${esc(s.kategori)} kategorisinde</div></div>
       <div class="panel kpi"><div class="label">Hesap Durumu</div><div class="chip ${isFrozen(s) ? "" : "aktif"}">${s.durum}</div><div class="sub">Kart limiti ${tl(s.limit)}</div></div>
-      <div class="panel kpi danger"><div class="label">Gelir Kaybı Riski</div><div class="value">${money(s.fiyat)} / ay</div><div class="sub">${tl(12 * s.fiyat)} / yıl</div></div>
+      <div class="panel kpi danger"><div class="label">Gelir Kaybı Riski</div><div class="value">${money(s.fiyat)}<small>/ ay</small></div><div class="sub">${tl(12 * s.fiyat)} / yıl</div></div>
     </div>
 
     <div class="b2b-grid">
@@ -477,7 +479,7 @@ function renderB2B() {
       </div>
       <div class="panel chart-panel">
         <div class="label plain">Son 6 Ay Ödeme Geçmişi</div>
-        ${areaSvg(months, { width: 760, height: 200, yTicks: true, label: `${s.ad} son 6 ay ödemeleri` })}
+        ${areaSvg(months, { width: isPhone() ? 380 : 760, height: isPhone() ? 220 : 200, yTicks: true, label: `${s.ad} son 6 ay ödemeleri` })}
       </div>
     </div>
 
@@ -523,19 +525,52 @@ function openExplain() {
     </div>`);
 }
 
+const REPORT_FIELDS = [
+  ["anonim_kullanici_id", "Anonim kullanıcı kimliği"],
+  ["hizmet", "Hizmet"],
+  ["kategori", "Kategori"],
+  ["aylik_ucret_tl", "Aylık ücret", "tl"],
+  ["maasa_orani_yuzde", "Ücretin maaşa oranı", "pct"],
+  ["fiyat_artisi", "Son zam", "hike"],
+  ["sanal_kart_durumu", "Sanal kart durumu"],
+  ["dondurma_tarihi", "Dondurma tarihi", "date"],
+  ["sanal_kart_aylik_limiti_tl", "Kart limiti", "tl"],
+  ["limit_ucretin_altinda_mi", "Limit ücretin altında mı", "bool"],
+  ["kesintisiz_odeme_ay_sayisi", "Kesintisiz ödenen ay"],
+  ["odeme_gecmisi", "Ödeme geçmişi", "payments"],
+  ["kategorideki_rakip_sayisi", "Rakip abonelik sayısı"],
+  ["ayni_kategorideki_diger_abonelikler", "Aynı kategorideki abonelikler", "rivals"],
+  ["rakip_ortalama_ucret_tl", "Rakiplerin ortalama ücreti", "tl"],
+  ["kategorinin_en_pahalisi_mi", "Kategorinin en pahalısı mı", "bool"],
+  ["toplam_aktif_abonelik_yuku_tl", "Toplam aktif abonelik yükü", "tl"],
+  ["toplam_abonelik_yukunun_maasa_orani_yuzde", "Abonelik yükünün maaşa oranı", "pct"],
+  ["genel_harcama_trendi", "Genel harcama eğilimi", "text"],
+];
+
+function reportValue(v, kind) {
+  if (v === null || v === undefined || v === "") return "—";
+  switch (kind) {
+    case "tl": return esc(tl(v));
+    case "pct": return `%${pct(v, 2)}`;
+    case "bool": return v ? "Evet" : "Hayır";
+    case "date": return dmy(v);
+    case "text": return esc(String(v).charAt(0).toLocaleUpperCase("tr-TR") + String(v).slice(1));
+    case "hike": return `${esc(tl(v.eski_fiyat))} → ${esc(tl(v.yeni_fiyat))} (%${pct(v.oran_yuzde)}), ${monthYear(v.tarih)}`;
+    case "payments": return v.map((p) => `${dmy(p.tarih)} · ${esc(tl(p.tutar))}`).join("<br>");
+    case "rivals": return v.map((r) => `${esc(r.hizmet)} · ${esc(tl(r.aylik_ucret_tl))} · ${esc(r.durum)}`).join("<br>");
+    default: return esc(v);
+  }
+}
+
 async function openReport() {
   try {
     const r = await api("GET", `/api/b2b/${ui.company}/rapor`);
-    const fmt = (v) => {
-      if (v === null) return "—";
-      if (typeof v === "boolean") return v ? "evet" : "hayır";
-      if (Array.isArray(v)) return v.map((x) => esc(typeof x === "object" ? Object.values(x).join(" · ") : x)).join("<br>");
-      if (typeof v === "object") return Object.entries(v).map(([k, x]) => `${esc(k)}: ${esc(x)}`).join("<br>");
-      return esc(v);
-    };
+    const known = new Set(REPORT_FIELDS.map(([k]) => k));
+    const rows = [...REPORT_FIELDS.filter(([k]) => k in r), ...Object.keys(r).filter((k) => !known.has(k)).map((k) => [k, k])];
     openModal("Anonimleştirilmiş Hesap Raporu", `
       <p class="modal-note">Şirketlere kimlik bilgisi paylaşılmaz; yalnızca aşağıdaki anonim finansal davranış sinyalleri iletilir.</p>
-      <div class="kv">${Object.entries(r).map(([k, v]) => `<div class="k">${esc(k)}</div><div class="v">${fmt(v)}</div>`).join("")}</div>`, true);
+      <div class="kv">${rows.map(([k, label, kind]) => `<div class="k">${esc(label)}<code>${esc(k)}</code></div>
+        <div class="v">${reportValue(r[k], kind)}</div>`).join("")}</div>`, true);
   } catch (e) { toastError(e.message); }
 }
 
@@ -571,7 +606,7 @@ function renderTransactions() {
 
     <div class="panel tx-chart">
       <div class="label plain">Aylık Gider (₺) — Son 6 Ay</div>
-      ${areaSvg(points, { width: 1200, height: 230, yTicks: true, label: "Son 6 ay aylık gider" })}
+      ${areaSvg(points, { width: isPhone() ? 380 : 1200, height: isPhone() ? 220 : 230, yTicks: true, label: "Son 6 ay aylık gider" })}
     </div>
 
     <div class="panel table-wrap">
@@ -778,6 +813,7 @@ setInterval(() => {
 }, 30000);
 
 window.addEventListener("hashchange", routeFromHash);
+window.matchMedia("(max-width: 860px)").addEventListener("change", () => { if (ui.view !== "b2c") render(); });
 
 (async function init() {
   routeFromHash();

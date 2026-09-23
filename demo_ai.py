@@ -15,7 +15,7 @@ def tl(n: float) -> str:
 
 
 def pct(n: float, digits: int = 1) -> str:
-    return f"%{round(n, digits):g}"
+    return f"%{round(n, digits):g}".replace(".", ",")
 
 
 def _month(iso: str) -> str:
@@ -153,8 +153,8 @@ def churn_analysis(f: dict) -> dict:
             line = f"Kategorideki diğer abonelikler ({', '.join(paused)}) dondurulmuş; bu servis kategoride tek aktif seçenek"
         degerlendirme.append(line)
     else:
-        degerlendirme.append(f"Kategoride rakip abonelik yok; ücret maaşın {pct(f['maasa_orani_yuzde'], 2)}'i")
-        degerlendirme.append(f"Toplam abonelik yükü maaşın {pct(f['toplam_abonelik_yukunun_maasa_orani_yuzde'])}'i, "
+        degerlendirme.append(f"Kategoride rakip abonelik yok; ücretin maaşa oranı {pct(f['maasa_orani_yuzde'], 2)}")
+        degerlendirme.append(f"Toplam abonelik yükünün maaşa oranı {pct(f['toplam_abonelik_yukunun_maasa_orani_yuzde'])}, "
                              "genel harcama trendi " + f["genel_harcama_trendi"])
 
     hike = f.get("fiyat_artisi")
@@ -204,6 +204,6 @@ def spending_summary(payload: dict) -> dict:
     first, last = months[0]["gider"], months[-1]["gider"]
     trend = "arttı" if last > first * 1.05 else "azaldı" if last < first * 0.95 else "dengede kaldı"
     return {"ozet": (
-        f"Son 6 ayda aylık ortalama {tl(avg)} harcadın; bu, maaşının {pct(100 * avg / payload['aylik_net_maas_tl'])}'i. "
+        f"Son 6 ayda aylık ortalama {tl(avg)} harcadın, maaşa oranı {pct(100 * avg / payload['aylik_net_maas_tl'])}. "
         f"En çok harcama yaptığın yerler {' ve '.join(t.title() for t in top)}; aylık giderin dönem başına göre {trend}. "
         f"Aktif aboneliklerin ayda {tl(subs_total)} tutuyor, kullanmadıklarını dondurarak bu yükü azaltabilirsin.")}
