@@ -7,13 +7,11 @@ import os
 import threading
 
 import pytest
+from werkzeug.serving import make_server
+
+from app import app
 
 sync_api = pytest.importorskip("playwright.sync_api")
-
-from werkzeug.serving import make_server  # noqa: E402
-
-from app import app  # noqa: E402
-
 expect = sync_api.expect
 
 
