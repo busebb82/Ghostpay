@@ -27,6 +27,15 @@ SESSION_COOKIE = "gp_sid"
 SESSION_TTL = 2 * 3600
 MAX_SESSIONS = 300
 MAX_LIMIT = 100_000
+LANGS = ("tr", "en")
+
+MESSAGES = {
+    "bad_status": {"tr": "Geçersiz kart durumu.", "en": "Invalid card status."},
+    "not_found": {"tr": "Abonelik bulunamadı.", "en": "Subscription not found."},
+    "bad_limit": {"tr": "Geçerli bir limit girin.", "en": "Enter a valid limit."},
+    "limit_range": {"tr": "Limit 0 ile 100.000 ₺ arasında olmalı.", "en": "The limit must be between ₺0 and ₺100,000."},
+    "nothing_to_restore": {"tr": "Geri alınacak kart bulunamadı.", "en": "There is no card to restore."},
+}
 
 app = Flask(__name__, static_folder="static", static_url_path="/static")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
@@ -55,6 +64,7 @@ class DemoSession:
         self.summary: dict = {}
         self.deleted: dict[str, tuple[int, dict]] = {}
         self.pending: set[str] = set()
+        self.lang = "tr"
         # Aynı abonelik için eski bir Claude cevabı yenisinin üstüne yazılmasın
         self.generation = 0
         for s in self.subs:
@@ -69,6 +79,14 @@ class DemoSession:
     def company_signals(self, sub: dict) -> dict:
         return {"anonim_kullanici_id": self.anon_id, **self.features(sub)}
 
+    def set_lang(self, lang: str) -> None:
+        """Dil değişince üretilmiş metinler yeni dilde baştan üretilir."""
+        self.lang = lang
+        self.user_ai.clear()
+        self.summary = {}
+        for s in self.subs:
+            self.reset_churn(s)
+
     def reset_churn(self, sub: dict) -> None:
         """Tahmini skoru hemen yazar; Claude cevabı arka planda gelince üstüne yazılır."""
         self.generation += 1
@@ -78,13 +96,13 @@ class DemoSession:
                                  "nesil": self.generation}
         if engine.mode == "claude":
             self.pending.add(sub["id"])
-            executor.submit(self._run_churn, sub["id"], signals, self.generation)
+            executor.submit(self._run_churn, sub["id"], signals, self.generation, self.lang)
         else:
-            self._run_churn(sub["id"], signals, self.generation)
+            self._run_churn(sub["id"], signals, self.generation, self.lang)
 
-    def _run_churn(self, sub_id: str, signals: dict, gen: int) -> None:
+    def _run_churn(self, sub_id: str, signals: dict, gen: int, lang: str) -> None:
         try:
-            result = {**engine.churn_analysis(signals), "kaynak": engine.mode, "zaman": now_iso()}
+            result = {**engine.churn_analysis(signals, lang), "kaynak": engine.mode, "zaman": now_iso()}
         except AIError as e:
             result = {"hata": str(e)}
         with self.lock:
@@ -98,6 +116,7 @@ class DemoSession:
         with self.lock:
             return {
                 "bugun": self.today.isoformat(),
+                "dil": self.lang,
                 "maas": AYLIK_NET_MAAS,
                 "kategoriler": CATEGORIES,
                 "ai_modu": engine.mode,
@@ -135,7 +154,11 @@ def current_session() -> DemoSession:
             sess = sessions[sid] = DemoSession(sid)
             g.new_sid = sid
         sess.last_seen = time.time()
-        return sess
+    lang = request.headers.get("X-Lang")
+    if lang in LANGS and lang != sess.lang:
+        with sess.lock:
+            sess.set_lang(lang)
+    return sess
 
 
 @app.after_request
@@ -152,8 +175,8 @@ def finalize(response):
     return response
 
 
-def error(message: str, status: int):
-    return jsonify({"hata": message}), status
+def error(key: str, status: int, sess: DemoSession):
+    return jsonify({"hata": MESSAGES[key][sess.lang]}), status
 
 
 def body() -> dict:
@@ -180,6 +203,8 @@ def reset_demo():
     sess = current_session()
     with sessions_lock:
         fresh = sessions[sess.sid] = DemoSession(sess.sid)
+    if sess.lang != fresh.lang:
+        fresh.set_lang(sess.lang)
     return jsonify(fresh.payload())
 
 
@@ -188,11 +213,11 @@ def set_status(sub_id):
     sess = current_session()
     status = body().get("durum")
     if status not in ("Aktif", "Donduruldu"):
-        return error("Geçersiz kart durumu.", 400)
+        return error("bad_status", 400, sess)
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
-            return error("Abonelik bulunamadı.", 404)
+            return error("not_found", 404, sess)
         sub["durum"] = status
         sub["dondurma_tarihi"] = sess.today.isoformat() if status == "Donduruldu" else None
         sub["sonraki_odeme"] = next_due(date.fromisoformat(sub["son_odeme"]), sess.today).isoformat()
@@ -207,13 +232,13 @@ def set_limit(sub_id):
     try:
         limit = round(float(str(body().get("limit")).replace(",", ".")), 2)
     except (TypeError, ValueError):
-        return error("Geçerli bir limit girin.", 400)
+        return error("bad_limit", 400, sess)
     if not 0 <= limit <= MAX_LIMIT:
-        return error("Limit 0 ile 100.000 ₺ arasında olmalı.", 400)
+        return error("limit_range", 400, sess)
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
-            return error("Abonelik bulunamadı.", 404)
+            return error("not_found", 404, sess)
         sub["limit"] = limit
         sess.user_ai.pop(sub_id, None)
         sess.reset_churn(sub)
@@ -226,7 +251,7 @@ def delete_card(sub_id):
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
-            return error("Abonelik bulunamadı.", 404)
+            return error("not_found", 404, sess)
         sess.deleted[sub_id] = (sess.subs.index(sub), sub)
         sess.subs.remove(sub)
         for store in (sess.churn, sess.user_ai):
@@ -240,7 +265,7 @@ def restore_card(sub_id):
     sess = current_session()
     with sess.lock:
         if sub_id not in sess.deleted:
-            return error("Geri alınacak kart bulunamadı.", 404)
+            return error("nothing_to_restore", 404, sess)
         position, sub = sess.deleted.pop(sub_id)
         sess.subs.insert(min(position, len(sess.subs)), sub)
         sess.reset_churn(sub)
@@ -253,12 +278,12 @@ def ai_user(sub_id):
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
-            return error("Abonelik bulunamadı.", 404)
+            return error("not_found", 404, sess)
         features = sess.features(sub)
     try:
-        result = {**engine.analyze_subscription(features), "zaman": now_iso()}
+        result = {**engine.analyze_subscription(features, sess.lang), "zaman": now_iso()}
     except AIError as e:
-        return error(str(e), 502)
+        return jsonify({"hata": str(e)}), 502
     with sess.lock:
         sess.user_ai[sub_id] = result
     return jsonify(sess.payload())
@@ -270,7 +295,7 @@ def b2b_report(sub_id):
     with sess.lock:
         sub = sess.find(sub_id)
         if not sub:
-            return error("Abonelik bulunamadı.", 404)
+            return error("not_found", 404, sess)
         return jsonify(sess.company_signals(sub))
 
 
@@ -292,9 +317,9 @@ def ai_summary():
                             for s in sess.subs],
         }
     try:
-        result = {**engine.spending_summary(payload), "zaman": now_iso()}
+        result = {**engine.spending_summary(payload, sess.lang), "zaman": now_iso()}
     except AIError as e:
-        return error(str(e), 502)
+        return jsonify({"hata": str(e)}), 502
     with sess.lock:
         sess.summary = result
     return jsonify(sess.payload())
