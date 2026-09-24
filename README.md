@@ -92,27 +92,6 @@ Algoritmaların ve teknik kararların ayrıntısı: [docs/architecture.md](docs/
 
 Python, Flask, Gunicorn, Claude API, framework'süz JavaScript ve SVG grafikler, pytest, Playwright, Ruff, GitHub Actions, Render
 
-### Kurulum
-
-```bash
-git clone https://github.com/busebb82/Ghostpay.git
-cd Ghostpay
-python3 -m pip install -r requirements.txt
-python3 app.py                           # http://localhost:8501
-```
-
-Claude API ile çalıştırmak için önce `export ANTHROPIC_API_KEY="..."` komutunu çalıştırın.
-Anahtar yoksa uygulama kural tabanlı motorla çalışır; canlı demo şu an bu modda.
-
-### Testler
-
-```bash
-python3 -m pip install -r requirements-dev.txt
-python3 -m playwright install chromium   # tarayıcı testleri için bir kez
-pytest                                   # 31 birim + 11 tarayıcı testi
-ruff check .
-```
-
 ### Proje yapısı
 
 ```
@@ -162,19 +141,6 @@ see, from anonymized signals only, which customers they are about to lose and ho
 ### Tech stack
 
 Python, Flask, Gunicorn, Claude API, framework-free JavaScript with SVG charts, pytest, Playwright, Ruff, GitHub Actions, Render
-
-### Getting started
-
-```bash
-git clone https://github.com/busebb82/Ghostpay.git
-cd Ghostpay
-python3 -m pip install -r requirements.txt
-python3 app.py                           # http://localhost:8501
-```
-
-Set `ANTHROPIC_API_KEY` to use the Claude API; without it the rule-based engine is used, which is
-how the live demo currently runs. For tests, install `requirements-dev.txt`, run
-`python3 -m playwright install chromium` once and then `pytest`.
 
 Algorithms and design decisions are described in [docs/architecture.md](docs/architecture.md#english).
 
