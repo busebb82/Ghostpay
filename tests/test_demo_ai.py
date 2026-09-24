@@ -22,7 +22,7 @@ def test_turkish_money_format():
 def test_user_analysis_shape():
     out = demo_ai.analyze_subscription(features("Netflix"))
     assert out["ozet"] and len(out["maddeler"]) == 3
-    assert "%0.45" in out["maddeler"][0]
+    assert "%0,45" in out["maddeler"][0]
 
 
 def test_churn_scores_spread_across_levels():
