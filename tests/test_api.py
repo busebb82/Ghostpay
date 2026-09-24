@@ -111,3 +111,29 @@ def test_claude_calls_are_rate_limited_and_fall_back_to_demo():
     out = engine.spending_summary({"aylik_net_maas_tl": 65000, "aylik_gider_toplamlari": [{"gider": 1}],
                                    "harcama_kalemleri_6_ay_tl": {"MIGROS": 1}, "abonelikler": []})
     assert out["ozet"] and not calls
+
+
+def test_language_header_switches_generated_texts(client):
+    assert state(client)["dil"] == "tr"
+    s = client.get("/api/state", headers={"X-Lang": "en"}).get_json()
+    assert s["dil"] == "en"
+    netflix = s["churn"]["netflix"]
+    assert netflix["aksiyonlar"][0]["baslik"] == "Pre-Hike Price Guarantee"
+    assert "churn score" in " ".join(netflix["degerlendirme"])
+    s = client.post("/api/ai/abonelik/netflix", headers={"X-Lang": "en"}).get_json()
+    assert "price" in s["kullanici_ai"]["netflix"]["ozet"]
+    # Dil değişince eski dildeki analizler silinir
+    s = client.get("/api/state", headers={"X-Lang": "tr"}).get_json()
+    assert s["kullanici_ai"] == {}
+    assert s["churn"]["netflix"]["aksiyonlar"][0]["baslik"] == "Zam Öncesi Fiyat Garantisi"
+
+
+def test_error_messages_follow_language(client):
+    r = client.post("/api/abonelik/netflix/limit", json={"limit": "abc"}, headers={"X-Lang": "en"})
+    assert r.status_code == 400 and r.get_json()["hata"] == "Enter a valid limit."
+    r = client.post("/api/abonelik/yok/durum", json={"durum": "Aktif"}, headers={"X-Lang": "tr"})
+    assert r.get_json()["hata"] == "Abonelik bulunamadı."
+
+
+def test_unknown_language_is_ignored(client):
+    assert client.get("/api/state", headers={"X-Lang": "de"}).get_json()["dil"] == "tr"

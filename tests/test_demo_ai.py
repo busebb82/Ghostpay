@@ -65,3 +65,14 @@ def test_texts_avoid_broken_turkish_suffixes():
                         + demo_ai.churn_analysis(f)["degerlendirme"])
         assert "'ini" not in text and "'in fiyat" not in text
         assert "ile 1.000,00 ₺ arası" not in text or "1.019,49" in text
+
+
+def test_english_texts_have_no_turkish_leftovers():
+    turkish = set("çğışöüÇĞİŞÖÜ")
+    for s in SUBS:
+        f = features(s["ad"])
+        texts = [demo_ai.analyze_subscription(f, "en")["ozet"], *demo_ai.analyze_subscription(f, "en")["maddeler"]]
+        churn = demo_ai.churn_analysis(f, "en")
+        texts += churn["degerlendirme"] + [a["baslik"] + a["aciklama"] for a in churn["aksiyonlar"]]
+        assert not any(ch in turkish for text in texts for ch in text), (s["ad"], texts)
+        assert churn["churn_risk"] == demo_ai.churn_analysis(f)["churn_risk"]

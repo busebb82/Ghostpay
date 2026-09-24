@@ -11,7 +11,7 @@ Abonelik yönetimi için sanal kart ve churn analizi uygulaması
 ![Flask](https://img.shields.io/badge/Flask-3-000000?logo=flask&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/license-MIT-a594f9)](LICENSE)
 
-[Türkçe](#türkçe) · [English](#english) · [Canlı demo / Live demo](https://ghostpay-670i.onrender.com)
+[Türkçe](#türkçe) · [English](#english) · [Canlı demo](https://ghostpay-670i.onrender.com/?lang=tr) · [Live demo](https://ghostpay-670i.onrender.com/?lang=en)
 
 <img src="docs/demo.gif" alt="GhostPay demo" width="880">
 
@@ -31,6 +31,12 @@ Uygulamanın iki paneli var:
 - **Müşteri paneli:** Abonelik giderleri, kategori dağılımı ve her aboneliğin sanal kartı. Bir servis zam yaptığında uyarı çıkıyor ve kart limiti tek tıkla eski fiyata sabitlenebiliyor.
 - **Şirket paneli:** Abonelik şirketinin göreceği ekran. Kişisel veri olmadan, anonim sinyallerle churn riski, gelir kaybı riski ve müşteriyi tutmak için önerilen kampanyalar.
 
+### Proje hakkında
+
+GhostPay'in ilk sürümü bir hackathon için geliştirildi. Hackathon'dan sonra proje; ödeme
+geçmişinden zam tespiti, churn skorunun kalibrasyonu, İngilizce arayüz, tarayıcı testleri ve
+canlıya alma ile geliştirilmeye devam etti.
+
 GhostPay bir demo projesidir ve Moka United'ın resmi bir ürünü değildir; şirket adı senaryoyu
 anlatmak için kullanılmıştır. Tüm veriler sentetiktir.
 
@@ -45,7 +51,7 @@ anlatmak için kullanılmıştır. Tüm veriler sentetiktir.
 | **Churn riski** | Her abonelik için 0-100 arası skor. Kartın dondurulması riski en çok artıran sinyal; düzenli ödeme geçmişi riski düşürüyor. |
 | **Retention önerileri** | Her abonelik için 3 kampanya önerisi: zam öncesi fiyat garantisi, yıllık paket, aile paketi gibi. |
 | **İşlem geçmişi** | 6 aylık sentetik Open Banking verisi, arama, gelir/gider filtresi, aylık gider grafiği ve harcama özeti. |
-| **Mobil** | Telefonda da tüm ekranlar kullanılabiliyor. |
+| **Mobil ve iki dil** | Telefonda da tüm ekranlar kullanılabiliyor. Arayüz ve üretilen analizler Türkçe ya da İngilizce; dil tarayıcıya göre seçiliyor, menüdeki TR/EN düğmesiyle değiştirilebiliyor. |
 
 <table>
   <tr>
@@ -137,8 +143,19 @@ yönetilen bir veritabanına taşınabilir.
 yazı tipleri sunucudan geliyor. Content Security Policy satır içi script'e izin vermediği için
 tüm tıklamalar `data-action` öznitelikleriyle tek bir yerden yönetiliyor.
 
+**İki dil.** Veri anahtarları (kategori, kart durumu) Türkçe kalıyor, arayüz yalnızca gösterirken
+çeviriyor. Tarayıcı her istekte `X-Lang` başlığını gönderiyor; dil değişince sunucu o ziyaretçinin
+analizlerini yeni dilde baştan üretiyor. Önbellek anahtarı dili de içerdiği için iki dilin sonucu
+birbirine karışmıyor.
+
+**Testler.** `tests/` altındaki birim testleri abonelik ve zam tespitini, churn skorunu, API'yi ve
+iki dildeki metinleri kontrol ediyor. `tests/e2e/` altındaki tarayıcı testleri uygulamayı gerçek bir
+Chromium'da açıp kart dondurma, limit değiştirme, silip geri alma, dil değiştirme ve telefon
+görünümünü deniyor. İkisi de her push'ta GitHub Actions'ta çalışıyor.
+
 **Uyanık tutma.** Ücretsiz sunucu 15 dakika istek gelmezse uyuyor. `keepalive.yml` iş akışı
-siteye 10 dakikada bir istek atıyor, böylece linke tıklayan kişi beklemiyor.
+siteye düzenli istek atıyor. GitHub zamanlanmış işleri geciktirebildiği için UptimeRobot gibi bir
+dış izleme servisiyle birlikte kullanmak daha güvenilir.
 
 ### Analiz motoru
 
@@ -173,15 +190,17 @@ detector.py     Abonelik ve zam tespiti, davranış profili
 ai_engine.py    Claude API bağlantısı, önbellek, saatlik limit
 demo_ai.py      Kural tabanlı analiz motoru
 mock_data.py    6 aylık sentetik işlem geçmişi
-static/         Arayüz (HTML, CSS, JavaScript, yazı tipleri)
-tests/          pytest testleri
+static/         Arayüz (HTML, CSS, JavaScript, çeviriler, yazı tipleri)
+tests/          Birim testleri
+tests/e2e/      Playwright ile tarayıcı testleri
 ```
 
 ### Geliştirme
 
 ```bash
 python3 -m pip install -r requirements-dev.txt
-pytest
+python3 -m playwright install chromium   # tarayıcı testleri için bir kez
+pytest                                   # birim ve tarayıcı testleri
 ruff check .
 ```
 
@@ -202,6 +221,9 @@ The app has two dashboards:
 - **Customer dashboard:** subscription spending, category breakdown and a virtual card for each subscription. When a service raises its price, a warning appears and the card limit can be locked at the old price.
 - **Company dashboard:** what the subscription provider sees. Churn risk, revenue at risk and suggested retention offers, based only on anonymized signals.
 
+GhostPay started as a hackathon project. After the hackathon it kept growing with price hike
+detection, a calibrated churn score, an English interface, browser tests and a public deployment.
+
 GhostPay is a demo project and not an official Moka United product; the company name is used
 for the scenario. All data is synthetic.
 
@@ -212,7 +234,18 @@ for the scenario. All data is synthetic.
 - Personal advice per subscription based on payment history, price hikes and similar subscriptions
 - Churn score from 0 to 100 with an explanation and three retention offers
 - Six months of synthetic Open Banking transactions with search, filters and a monthly chart
-- Works on phones
+- Works on phones, in Turkish and English (picked from the browser, switchable with the TR/EN button)
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/b2c-dashboard-en.png" alt="Customer dashboard in English"></td>
+    <td width="50%"><img src="docs/screenshots/b2b-churn-en.png" alt="Company dashboard in English"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>Customer dashboard</sub></td>
+    <td align="center"><sub>Company dashboard</sub></td>
+  </tr>
+</table>
 
 ### Analysis engine
 
@@ -225,7 +258,9 @@ reached, a rule-based engine returns results in the same format.
 - **Price hikes:** the payment history is split at each point, newest first. A point counts as a hike when every later charge is at least 2% above every earlier one and the median rises by at least 6%, so currency noise and one-off spikes are ignored.
 - **Churn score:** starts at 20 and moves with the signals in the table in the Turkish section: +50 for a frozen card, +18 for a limit below the price, up to +20 for a price hike, minus one point per paid month (at most 8). 0-39 is low, 40-64 medium, 65+ high.
 - **Single worker:** demo sessions live in memory, so gunicorn runs one process with 8 threads. Render's free plan has no persistent disk, which is why there is no database.
-- **Keep alive:** a scheduled workflow pings the site every 10 minutes so the free server does not sleep.
+- **Two languages:** data keys stay Turkish and the interface translates them for display. The browser sends an `X-Lang` header; when it changes, the server regenerates that visitor's analyses in the new language, and the cache key includes the language.
+- **Tests:** unit tests cover detection, the churn score, the API and both languages. Browser tests in `tests/e2e/` drive the app in a real Chromium with Playwright. Both run on every push.
+- **Keep alive:** a scheduled workflow pings the site so the free server does not sleep.
 
 The live demo currently runs the rule-based engine.
 
@@ -238,11 +273,11 @@ python3 -m pip install -r requirements.txt
 python3 app.py            # http://localhost:8501
 ```
 
-Tests: `pip install -r requirements-dev.txt && pytest`
+Tests: `pip install -r requirements-dev.txt && python -m playwright install chromium && pytest`
 
 ### Tech stack
 
-Python, Flask, Gunicorn, Claude API, vanilla JavaScript with SVG charts, pytest, Ruff, GitHub Actions, Render
+Python, Flask, Gunicorn, Claude API, vanilla JavaScript with SVG charts, pytest, Playwright, Ruff, GitHub Actions, Render
 
 ---
 
