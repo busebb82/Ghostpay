@@ -1,7 +1,9 @@
 [project]
 name = "ghostpay"
-version = "1.0.0"
-description = "Yapay zekâ destekli abonelik yönetimi ve churn analizi (Moka United sanal kartları)"
+version = "1.1.0"
+description = "Per-subscription virtual cards, price hike detection and churn analytics"
+authors = [{ name = "Buse Bozyel" }]
+readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 
