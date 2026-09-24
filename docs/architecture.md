@@ -90,7 +90,7 @@ Content Security Policy satır içi script'e izin vermediği için tüm tıklama
 - GitHub Actions her push'ta lint'i, birim testlerini (Python 3.11-3.13) ve tarayıcı testlerini
   çalıştırır.
 - Uygulama Render'da `render.yaml` ile yayınlanır; `main` dalına her birleştirmede güncellenir.
-  Ücretsiz sunucunun uyumaması için dışarıdan düzenli sağlık kontrolü yapılır.
+  Ücretsiz sunucunun uyumaması için UptimeRobot `/healthz` adresini 5 dakikada bir kontrol eder.
 
 ---
 
@@ -146,5 +146,5 @@ includes the language.
 Unit tests cover detection, the churn score, the API and both languages. Browser tests in
 `tests/e2e/` drive the app in Chromium with Playwright. GitHub Actions runs lint, unit tests on
 Python 3.11-3.13 and the browser tests on every push. The app is deployed on Render from
-`render.yaml` on every merge to `main`, with an external health check keeping the free instance
+`render.yaml` on every merge to `main`; UptimeRobot checks `/healthz` every 5 minutes to keep the free instance
 awake.
