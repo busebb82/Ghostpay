@@ -24,7 +24,7 @@
 > Built for the **Moka United FinTech Hackathon: Hack the Idea** (July 2026, with Coderspace) and
 > ranked in the top 30 out of 400+ teams.
 
-[Türkçe](#türkçe) · [English](#english)
+[Türkçe](#türkçe) · [English](#english) · [Takım / Team](#takım--team)
 
 ---
 
@@ -180,10 +180,17 @@ Algorithms and design decisions are described in [docs/architecture.md](docs/arc
 
 ---
 
+## Takım / Team
+
+- **Buse Bozyel** · [@busebb82](https://github.com/busebb82)
+- **Ayça Bayraktar** · [@aychabayraktar](https://github.com/aychabayraktar)
+
+---
+
 <div align="center">
 <sub>GhostPay, Moka United'ın düzenlediği hackathon için geliştirilmiş bir demo projesidir; Moka United'ın resmi bir ürünü değildir. Tüm veriler sentetiktir.</sub>
 <br>
 <sub>GhostPay is a hackathon demo, not an official Moka United product. All data is synthetic.</sub>
 <br>
-<sub><a href="LICENSE">MIT License</a> · © 2026 Buse Bozyel</sub>
+<sub><a href="LICENSE">MIT License</a> · © 2026 Buse Bozyel, Ayça Bayraktar</sub>
 </div>
