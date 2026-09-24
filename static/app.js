@@ -88,7 +88,8 @@ function ago(iso) {
   return h < 24 ? t("agoHour", { n: h }) : t("agoDay", { n: Math.floor(h / 24) });
 }
 const limitText = (n) => (LANG === "en" ? Number(n).toFixed(2) : Number(n).toFixed(2).replace(".", ","));
-const isPhone = () => window.matchMedia("(max-width: 860px)").matches;
+// Grafik yazıları her ekranda aynı boyda kalsın diye çizim genişliği alanın gerçek genişliği
+const chartWidth = (share = 1) => Math.max(300, Math.round(($main.clientWidth - 64) * share));
 function parseAmount(text) {
   let v = String(text).trim();
   if (LANG === "en") v = v.replace(/,/g, "");
@@ -273,9 +274,11 @@ function renderB2C() {
     <div class="grid-2">
       <div class="panel donut-panel">
         <div class="label plain">${t("costSplit")}</div>
-        <div class="legend-col">${legend(cats[0])}${legend(cats[1])}</div>
-        ${donutSvg(cats)}
-        <div class="legend-col right">${legend(cats[2])}${legend(cats[3])}</div>
+        <div class="donut-body">
+          <div class="legend-col">${legend(cats[0])}${legend(cats[1])}</div>
+          ${donutSvg(cats)}
+          <div class="legend-col right">${legend(cats[2])}${legend(cats[3])}</div>
+        </div>
       </div>
       <div class="panel">
         <div class="label plain">${t("monthlyLimit")}</div>
@@ -499,7 +502,7 @@ function renderB2B() {
       </div>
       <div class="panel chart-panel">
         <div class="label plain">${t("payHistory")}</div>
-        ${areaSvg(months, { width: isPhone() ? 380 : 760, height: isPhone() ? 220 : 200, yTicks: true, label: t("payHistoryAria", { name: s.ad }) })}
+        ${areaSvg(months, { width: chartWidth(window.innerWidth > 1180 ? 0.6 : 1), height: 220, yTicks: true, label: t("payHistoryAria", { name: s.ad }) })}
       </div>
     </div>
 
@@ -619,7 +622,7 @@ function renderTransactions() {
 
     <div class="panel tx-chart">
       <div class="label plain">${t("monthlySpend")}</div>
-      ${areaSvg(points, { width: isPhone() ? 380 : 1200, height: isPhone() ? 220 : 230, yTicks: true, label: t("monthlySpendAria") })}
+      ${areaSvg(points, { width: chartWidth(), height: 230, yTicks: true, label: t("monthlySpendAria") })}
     </div>
 
     <div class="panel table-wrap">
@@ -841,7 +844,16 @@ setInterval(() => {
 }, 30000);
 
 window.addEventListener("hashchange", routeFromHash);
-window.matchMedia("(max-width: 860px)").addEventListener("change", () => { if (ui.view !== "b2c") render(); });
+let resizeTimer;
+let lastWidth = window.innerWidth;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    // Müşteri panelinde yarım kalmış limit girişleri kaybolmasın diye yalnızca grafik olan sayfalar yenilenir
+    if (ui.view !== "b2c" && Math.abs(window.innerWidth - lastWidth) > 40) render();
+    lastWidth = window.innerWidth;
+  }, 200);
+});
 
 (async function init() {
   applyStaticText();
