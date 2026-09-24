@@ -2,7 +2,7 @@
 
 Aynı girdiye verilen cevaplar önbellekte tutulur; Claude çağrıları saatlik
 limitle sınırlanır, limit dolunca demo motoruna düşülür. Hatalar kullanıcıya
-gösterilecek Türkçe mesajla AIError olarak iletilir.
+gösterilecek mesajla (Türkçe ya da İngilizce) AIError olarak iletilir.
 """
 import hashlib
 import json
@@ -22,11 +22,16 @@ class AIError(Exception):
     pass
 
 
-STYLE = """Türkçe yaz. Para tutarlarını Türk formatında yaz (örn. 289,99 ₺, 1.019,49 ₺),
-yüzdeleri %0.45 biçiminde yaz. Kısa, somut ve veriye dayalı ol; verilen
-sayıları kullan, veri dışında bilgi uydurma."""
+STYLE = {
+    "tr": """Türkçe yaz. Para tutarlarını Türk formatında yaz (örn. 289,99 ₺, 1.019,49 ₺),
+yüzdeleri %0,45 biçiminde yaz. Kısa, somut ve veriye dayalı ol; verilen
+sayıları kullan, veri dışında bilgi uydurma.""",
+    "en": """Write every text field in English, even though the input keys are Turkish.
+Format money like ₺1,019.49 and percentages like 0.45%. Be short, concrete and
+data-driven; use the given numbers and do not invent facts.""",
+}
 
-SYSTEM_USER = f"""Sen GhostPay adlı abonelik yönetim platformunun kişisel analiz motorusun.
+SYSTEM_USER = """Sen GhostPay adlı abonelik yönetim platformunun kişisel analiz motorusun.
 Sana kullanıcının bir aboneliğine ait davranışsal özellikler JSON olarak verilecek:
 harcama alışkanlıkları, geçmiş ödemeler, aynı kategorideki rakip abonelikler,
 fiyat seviyesi, varsa son zam ve ücretin maaşa oranı. Tüm sinyalleri birlikte
@@ -36,9 +41,9 @@ değerlendir.
   (örn. "Maaşının çok küçük bir kısmını kaplıyor ama aynı kategoride 3 aboneliğin var,
   kullanım sıklığını gözden geçirmen iyi olur.")
 - "maddeler": bu önerinin nedenlerini açıklayan tam 3 kısa madde.
-{STYLE}"""
+"""
 
-SYSTEM_COMPANY = f"""Sen GhostPay'in abonelik şirketlerine yönelik (B2B) churn analiz motorusun.
+SYSTEM_COMPANY = """Sen GhostPay'in abonelik şirketlerine yönelik (B2B) churn analiz motorusun.
 Sana bir abonelik şirketinin müşterisine ait ANONİMLEŞTİRİLMİŞ finansal davranış
 sinyalleri verilecek: gelire göre abonelik maliyeti, aynı kategorideki rakip platformlar,
 fiyat seviyesi, varsa son zam, ödeme alışkanlıkları ve sanal kartın aktif ya da
@@ -53,13 +58,13 @@ dondurulmuş olması.
 - "aksiyonlar": müşteriyi tutmak için tam 3 kişiselleştirilmiş retention aksiyonu.
   Her biri kısa bir "baslik" (örn. "2 Ay %40 İndirim", "Yıllık Pakete Geçiş Bonusu",
   "Aile Paketi Upgrade") ve somut fiyatlar içeren tek cümlelik "aciklama".
-{STYLE}"""
+"""
 
-SYSTEM_SUMMARY = f"""Sen GhostPay'in kişisel finans asistanısın. Sana kullanıcının son 6 aylık
+SYSTEM_SUMMARY = """Sen GhostPay'in kişisel finans asistanısın. Sana kullanıcının son 6 aylık
 Open Banking işlem özetleri verilecek. "ozet" alanına kullanıcıya doğrudan hitap eden,
 2-3 cümlelik kişisel bir harcama davranışı özeti yaz: en çok nereye harcadığı,
 aylık eğilim ve abonelik yükü hakkında somut bir tespit ve tek bir öneri.
-{STYLE}"""
+"""
 
 SCHEMA_USER = {
     "type": "object",
@@ -98,12 +103,37 @@ SCHEMA_SUMMARY = {
 }
 
 
-def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload: dict) -> dict:
+ERRORS = {
+    "auth": {"tr": "API anahtarı geçersiz veya iptal edilmiş. console.anthropic.com üzerinden yeni bir anahtar oluşturun.",
+             "en": "The API key is invalid or revoked. Create a new key at console.anthropic.com."},
+    "permission": {"tr": "API anahtarının bu modele erişim izni yok.",
+                   "en": "The API key has no access to this model."},
+    "rate": {"tr": "İstek limiti aşıldı. Birkaç saniye bekleyip tekrar deneyin.",
+             "en": "Rate limit reached. Wait a few seconds and try again."},
+    "connection": {"tr": "Claude API'ye bağlanılamadı. İnternet bağlantınızı kontrol edin.",
+                   "en": "Could not reach the Claude API. Check your connection."},
+    "status": {"tr": "Claude API hatası (kod {code}). Hesabınızda kredi olduğundan emin olun ve tekrar deneyin.",
+               "en": "Claude API error (code {code}). Make sure the account has credit and try again."},
+    "refusal": {"tr": "Yapay zekâ bu isteği yanıtlamadı. Lütfen tekrar deneyin.",
+                "en": "The AI did not answer this request. Please try again."},
+    "truncated": {"tr": "Yapay zekâ yanıtı yarıda kesildi. Lütfen tekrar deneyin.",
+                  "en": "The AI response was cut off. Please try again."},
+    "parse": {"tr": "Yapay zekâ çıktısı çözümlenemedi. Lütfen tekrar deneyin.",
+              "en": "The AI output could not be parsed. Please try again."},
+}
+
+
+def _error(key: str, lang: str, **kw) -> AIError:
+    return AIError(ERRORS[key][lang].format(**kw))
+
+
+def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload: dict,
+                lang: str = "tr") -> dict:
     try:
         response = client.beta.messages.create(
             model=MODEL,
             max_tokens=4000,
-            system=system,
+            system=system + "\n" + STYLE[lang],
             messages=[{
                 "role": "user",
                 "content": json.dumps(payload, ensure_ascii=False, indent=2),
@@ -114,27 +144,25 @@ def _ask_claude(client: anthropic.Anthropic, system: str, schema: dict, payload:
             fallbacks="default",
         )
     except anthropic.AuthenticationError:
-        raise AIError("API anahtarı geçersiz veya iptal edilmiş. console.anthropic.com "
-                      "üzerinden yeni bir anahtar oluşturun.")
+        raise _error("auth", lang)
     except anthropic.PermissionDeniedError:
-        raise AIError("API anahtarının bu modele erişim izni yok.")
+        raise _error("permission", lang)
     except anthropic.RateLimitError:
-        raise AIError("İstek limiti aşıldı. Birkaç saniye bekleyip tekrar deneyin.")
+        raise _error("rate", lang)
     except anthropic.APIConnectionError:
-        raise AIError("Claude API'ye bağlanılamadı. İnternet bağlantınızı kontrol edin.")
+        raise _error("connection", lang)
     except anthropic.APIStatusError as e:
-        raise AIError(f"Claude API hatası (kod {e.status_code}). "
-                      "Hesabınızda kredi olduğundan emin olun ve tekrar deneyin.")
+        raise _error("status", lang, code=e.status_code)
 
     if response.stop_reason == "refusal":
-        raise AIError("Yapay zekâ bu isteği yanıtlamadı. Lütfen tekrar deneyin.")
+        raise _error("refusal", lang)
     if response.stop_reason == "max_tokens":
-        raise AIError("Yapay zekâ yanıtı yarıda kesildi. Lütfen tekrar deneyin.")
+        raise _error("truncated", lang)
     try:
         text = next(b.text for b in response.content if b.type == "text")
         return json.loads(text)
     except (StopIteration, json.JSONDecodeError):
-        raise AIError("Yapay zekâ çıktısı çözümlenemedi. Lütfen tekrar deneyin.")
+        raise _error("parse", lang)
 
 
 class AIEngine:
@@ -164,6 +192,7 @@ class AIEngine:
             return True
 
     def _run(self, kind: str, payload: dict, claude_call, demo_call) -> dict:
+        # kind dili de içerir; aynı profilin Türkçe ve İngilizce cevabı ayrı saklanır
         key = kind + ":" + hashlib.sha256(
             json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
         with self._lock:
@@ -176,21 +205,21 @@ class AIEngine:
                 self._cache.pop(next(iter(self._cache)))
         return dict(result)
 
-    def analyze_subscription(self, features: dict) -> dict:
-        return self._run("user", features,
-                         lambda p: _ask_claude(self.client, SYSTEM_USER, SCHEMA_USER, p),
-                         demo_ai.analyze_subscription)
+    def analyze_subscription(self, features: dict, lang: str = "tr") -> dict:
+        return self._run(f"user-{lang}", features,
+                         lambda p: _ask_claude(self.client, SYSTEM_USER, SCHEMA_USER, p, lang),
+                         lambda p: demo_ai.analyze_subscription(p, lang))
 
-    def churn_analysis(self, signals: dict) -> dict:
+    def churn_analysis(self, signals: dict, lang: str = "tr") -> dict:
         def claude(p):
-            result = _ask_claude(self.client, SYSTEM_COMPANY, SCHEMA_COMPANY, p)
+            result = _ask_claude(self.client, SYSTEM_COMPANY, SCHEMA_COMPANY, p, lang)
             result["churn_risk"] = max(0, min(100, int(result["churn_risk"])))
             return result
         # Anonim kimlik sonucu değiştirmez; önbellek anahtarına girerse her ziyaretçi ayrı çağrı yapar
         payload = {k: v for k, v in signals.items() if k != "anonim_kullanici_id"}
-        return self._run("churn", payload, claude, demo_ai.churn_analysis)
+        return self._run(f"churn-{lang}", payload, claude, lambda p: demo_ai.churn_analysis(p, lang))
 
-    def spending_summary(self, payload: dict) -> dict:
-        return self._run("summary", payload,
-                         lambda p: _ask_claude(self.client, SYSTEM_SUMMARY, SCHEMA_SUMMARY, p),
-                         demo_ai.spending_summary)
+    def spending_summary(self, payload: dict, lang: str = "tr") -> dict:
+        return self._run(f"summary-{lang}", payload,
+                         lambda p: _ask_claude(self.client, SYSTEM_SUMMARY, SCHEMA_SUMMARY, p, lang),
+                         lambda p: demo_ai.spending_summary(p, lang))

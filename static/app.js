@@ -4,10 +4,6 @@ const CAT_COLORS = {
   "Üretkenlik": "var(--c-uretkenlik)",
   "Yapay Zekâ": "var(--c-ai)",
 };
-const MONTHS_LONG = ["Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran", "Temmuz",
-  "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"];
-const MONTHS_SHORT = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
-const VIEW_TITLES = { b2c: "Müşteri Paneli", b2b: "Şirket Paneli", islemler: "İşlem Geçmişi" };
 
 const ICON = {
   snow: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2v20M4.9 6l14.2 12M19.1 6L4.9 18M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/></svg>',
@@ -44,48 +40,60 @@ const $main = document.getElementById("main");
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-const tl = (n) => Number(n).toLocaleString("tr-TR",
-  { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₺";
-const tlInt = (n) => Math.round(n).toLocaleString("tr-TR") + " ₺";
-const pct = (n, d = 1) => Number(Number(n).toFixed(d)).toString().replace(".", ",");
+function tl(n) {
+  const s = Number(n).toLocaleString(L.locale, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return LANG === "en" ? `₺${s}` : `${s} ₺`;
+}
+const tlInt = (n) => {
+  const s = Math.round(n).toLocaleString(L.locale);
+  return LANG === "en" ? `₺${s}` : `${s} ₺`;
+};
+const num = (n, d = 1) => Number(Number(n).toFixed(d)).toLocaleString(L.locale, { maximumFractionDigits: d });
+// Türkçede yüzde işareti başa, İngilizcede sona gelir
+const pct = (n, d = 1) => (LANG === "en" ? `${num(n, d)}%` : `%${num(n, d)}`);
 const money = (n) => `<span class="money">${tl(n)}</span>`;
 
 function parseDate(iso) {
   const [y, m, d] = iso.slice(0, 10).split("-").map(Number);
   return new Date(y, m - 1, d);
 }
+const pad = (n) => String(n).padStart(2, "0");
 const dmy = (iso) => {
   const d = parseDate(iso);
-  return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(2, "0")}.${d.getFullYear()}`;
+  return LANG === "en"
+    ? `${L.monthsShort[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
+    : `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
 };
 const longDate = (iso) => {
   const d = parseDate(iso);
-  return `${d.getDate()} ${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}`;
+  return LANG === "en"
+    ? `${L.months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`
+    : `${d.getDate()} ${L.months[d.getMonth()]} ${d.getFullYear()}`;
 };
 const monthYear = (iso) => {
   const d = parseDate(iso);
-  return `${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}`;
+  return `${L.months[d.getMonth()]} ${d.getFullYear()}`;
 };
 function longDateTime(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
-  return `${d.getDate()} ${MONTHS_LONG[d.getMonth()]} ${d.getFullYear()}, `
-    + `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${longDate(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`)}, ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 function ago(iso) {
   if (!iso) return "";
   const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (min < 1) return "az önce";
-  if (min < 60) return `${min} dk önce`;
+  if (min < 1) return t("agoNow");
+  if (min < 60) return t("agoMin", { n: min });
   const h = Math.floor(min / 60);
-  return h < 24 ? `${h} sa önce` : `${Math.floor(h / 24)} gün önce`;
+  return h < 24 ? t("agoHour", { n: h }) : t("agoDay", { n: Math.floor(h / 24) });
 }
-const limitText = (n) => Number(n).toFixed(2).replace(".", ",");
+const limitText = (n) => (LANG === "en" ? Number(n).toFixed(2) : Number(n).toFixed(2).replace(".", ","));
 const isPhone = () => window.matchMedia("(max-width: 860px)").matches;
 function parseAmount(text) {
-  let t = String(text).trim();
-  if (t.includes(",")) t = t.replace(/\./g, "").replace(",", ".");
-  return /^\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN;
+  let v = String(text).trim();
+  if (LANG === "en") v = v.replace(/,/g, "");
+  else if (v.includes(",")) v = v.replace(/\./g, "").replace(",", ".");
+  return /^\d+(\.\d+)?$/.test(v) ? parseFloat(v) : NaN;
 }
 
 function toast(message, { error = false, action = null, duration = 3800 } = {}) {
@@ -107,11 +115,11 @@ const toastError = (message) => toast(message, { error: true });
 async function api(method, url, body) {
   const res = await fetch(url, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : {},
+    headers: { "X-Lang": LANG, ...(body ? { "Content-Type": "application/json" } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.hata || "Sunucu hatası.");
+  if (!res.ok) throw new Error(data.hata || t("serverError"));
   return data;
 }
 
@@ -124,9 +132,9 @@ const churnOf = (s) => ui.state.churn[s.id] || { churn_risk: 0 };
 const hikeOpen = (s) => s.zam && !isFrozen(s) && s.limit > s.zam.eski_fiyat;
 
 function riskLevel(score) {
-  if (score >= 65) return { cls: "yuksek", text: "Yüksek risk" };
-  if (score >= 40) return { cls: "orta", text: "Orta risk" };
-  return { cls: "dusuk", text: "Düşük risk" };
+  if (score >= 65) return { cls: "yuksek", text: t("riskHigh") };
+  if (score >= 40) return { cls: "orta", text: t("riskMid") };
+  return { cls: "dusuk", text: t("riskLow") };
 }
 
 function categoryStats() {
@@ -149,11 +157,11 @@ function donutSvg(cats) {
     const len = (c.total / total) * C;
     const seg = `<circle cx="80" cy="80" r="${r}" fill="none" stroke="${CAT_COLORS[c.name] || "#888"}"
       stroke-width="26" stroke-dasharray="${Math.max(0, len - gap)} ${C}" stroke-dashoffset="${-offset}"
-      transform="rotate(-90 80 80)"><title>${esc(c.name)}: ${tl(c.total)}</title></circle>`;
+      transform="rotate(-90 80 80)"><title>${esc(catName(c.name))}: ${tl(c.total)}</title></circle>`;
     offset += len;
     return seg;
   }).join("");
-  return `<svg class="donut" viewBox="0 0 160 160" role="img" aria-label="Kategorilere göre aylık maliyet">
+  return `<svg class="donut" viewBox="0 0 160 160" role="img" aria-label="${t("donutLabel")}">
     <circle cx="80" cy="80" r="${r}" fill="none" stroke="#23232f" stroke-width="26"/>${segs}
     <circle cx="80" cy="80" r="44" fill="#14141c"/></svg>`;
 }
@@ -203,8 +211,24 @@ function areaSvg(points, { width = 900, height = 190, yTicks = false, label = ""
     ${labels}${dots}</svg>`;
 }
 
-const resetButton = () => `<button class="btn activate" data-action="reset-demo">Demoyu Sıfırla</button>`;
-const pageHead = (title) => `<div class="page-head"><h1>${title}</h1><div class="today">${longDate(ui.state.bugun)}</div></div>`;
+const resetButton = () => `<button class="btn activate" data-action="reset-demo">${t("resetDemo")}</button>`;
+const pageHead = (title) => `${introHtml()}<div class="page-head"><h1>${title}</h1><div class="today">${longDate(ui.state.bugun)}</div></div>`;
+
+const INTRO_KEY = "gp_intro_closed";
+function introClosed() {
+  try { return localStorage.getItem(INTRO_KEY) === "1"; } catch { return ui.introClosed; }
+}
+function introHtml() {
+  if (ui.introClosed || introClosed()) return "";
+  return `<section class="intro" aria-labelledby="intro-title">
+    <span class="intro-icon">${ICON.spark}</span>
+    <div class="intro-text"><h2 id="intro-title">${t("introTitle")}</h2><p>${esc(t("introText"))}</p></div>
+    <div class="intro-actions">
+      ${ui.view !== "b2b" ? `<a class="btn small" href="#b2b">${t("introB2b")}</a>` : ""}
+      <button class="btn small activate" data-action="close-intro">${t("introOk")}</button>
+    </div>
+  </section>`;
+}
 
 function renderB2C() {
   const cats = categoryStats();
@@ -221,8 +245,8 @@ function renderB2C() {
   const hikes = subs().filter(hikeOpen);
 
   const legend = (c) => c ? `<div class="legend-item">
-      <div class="name"><i class="dot" style="background:${CAT_COLORS[c.name]}"></i>${esc(c.name)}</div>
-      <div class="amount">${money(c.total)} <span>· %${pct((100 * c.total) / donutTotal)}</span></div>
+      <div class="name"><i class="dot" style="background:${CAT_COLORS[c.name]}"></i>${esc(catName(c.name))}</div>
+      <div class="amount">${money(c.total)} <span>· ${pct((100 * c.total) / donutTotal)}</span></div>
     </div>` : "";
 
   const selected = cats.find((c) => c.name === ui.category);
@@ -230,37 +254,37 @@ function renderB2C() {
     <div class="value">${value}</div><div class="sub">${sub}</div></div>`;
 
   $main.innerHTML = `
-    ${pageHead("Tekrar Hoş Geldin!")}
+    ${pageHead(t("welcome"))}
 
     <div class="kpis">
-      ${kpi("Aylık Net Maaş", money(salary()), "Her ayın 1'inde yatıyor")}
-      ${kpi("Bu Ay Abonelik", money(used), `${active.length} aktif sanal kart`)}
-      ${kpi("Maaşa Oranı", `%${pct((100 * used) / salary())}`, "Abonelik giderinin gelire oranı")}
-      ${kpi("Aylık Tasarruf", money(savings), `${frozen.length} dondurulmuş kart`)}
+      ${kpi(t("kpiSalary"), money(salary()), t("kpiSalarySub"))}
+      ${kpi(t("kpiSubs"), money(used), t("kpiSubsSub", { n: active.length }))}
+      ${kpi(t("kpiRatio"), pct((100 * used) / salary()), t("kpiRatioSub"))}
+      ${kpi(t("kpiSavings"), money(savings), t("kpiSavingsSub", { n: frozen.length }))}
     </div>
 
     ${hikes.length ? `<div class="alert" role="note">
       <span class="alert-icon">${ICON.trend}</span>
-      <div class="alert-text"><b>${hikes.length} abonelikte zam tespit edildi.</b>
-        ${hikes.map((s) => `${esc(s.ad)} %${pct(s.zam.oran_yuzde)}`).join(" · ")}</div>
-      <button class="btn small" data-action="go-hike" data-id="${hikes[0].id}">İncele</button>
+      <div class="alert-text"><b>${t("hikeAlert", { n: hikes.length })}</b>
+        ${hikes.map((s) => `${esc(s.ad)} ${pct(s.zam.oran_yuzde)}`).join(" · ")}</div>
+      <button class="btn small" data-action="go-hike" data-id="${hikes[0].id}">${t("review")}</button>
     </div>` : ""}
 
     <div class="grid-2">
       <div class="panel donut-panel">
-        <div class="label plain">Aylık Maliyet Dağılımı</div>
+        <div class="label plain">${t("costSplit")}</div>
         <div class="legend-col">${legend(cats[0])}${legend(cats[1])}</div>
         ${donutSvg(cats)}
         <div class="legend-col right">${legend(cats[2])}${legend(cats[3])}</div>
       </div>
       <div class="panel">
-        <div class="label plain">Aylık Abonelik Limiti</div>
+        <div class="label plain">${t("monthlyLimit")}</div>
         <div class="limit-total">${money(limitTotal)}</div>
-        <div class="ticks" role="img" aria-label="Limitin %${pct(limitTotal ? (100 * used) / limitTotal : 0, 0)} kısmı kullanıldı">
+        <div class="ticks" role="img" aria-label="${t("limitUsedAria", { p: pct(limitTotal ? (100 * used) / limitTotal : 0, 0) })}">
           ${Array.from({ length: 60 }, (_, i) => `<i class="${i < filled ? "on" : ""}"></i>`).join("")}</div>
-        <div class="limit-meta"><span>Kullanılan: <b>${money(used)}</b></span><span>Kalan: <b>${money(Math.max(0, limitTotal - used))}</b></span></div>
+        <div class="limit-meta"><span>${t("used")}: <b>${money(used)}</b></span><span>${t("remaining")}: <b>${money(Math.max(0, limitTotal - used))}</b></span></div>
         ${cats.map((c) => `<div class="cat-row">
-          <div class="top"><span class="n"><i style="background:${CAT_COLORS[c.name]}"></i>${esc(c.name)}</span>
+          <div class="top"><span class="n"><i style="background:${CAT_COLORS[c.name]}"></i>${esc(catName(c.name))}</span>
             <span class="v">${money(c.used)} / ${money(c.limit)}</span></div>
           <div class="bar"><div style="width:${c.limit ? Math.min(100, (100 * c.used) / c.limit) : 0}%;background:${CAT_COLORS[c.name]}"></div></div>
         </div>`).join("")}
@@ -269,21 +293,21 @@ function renderB2C() {
 
     <div class="subs-layout">
       <div class="stack-col">
-        <div class="stack" role="tablist" aria-label="Kategoriler">
+        <div class="stack" role="tablist" aria-label="${t("categoriesLabel")}">
           ${cats.map((c) => `<button class="stack-item ${c.name === ui.category ? "selected" : ""}" role="tab"
               aria-selected="${c.name === ui.category}" data-action="category" data-cat="${esc(c.name)}">
-            <span class="nm">${esc(c.name)}</span><span class="am">${money(c.total)}</span><span class="ct">${c.items.length} kart</span>
+            <span class="nm">${esc(catName(c.name))}</span><span class="am">${money(c.total)}</span><span class="ct">${t("cards", { n: c.items.length })}</span>
           </button>`).join("")}
         </div>
         <div class="total-card">
-          <div><div class="t">TOPLAM HARCAMA</div><div class="s">son 6 ay</div></div>
+          <div><div class="t">${t("totalSpend")}</div><div class="s">${t("last6")}</div></div>
           <div class="v">${tl(6 * monthlyTotal)}</div>
         </div>
       </div>
       <div>
-        ${selected ? `<h2 class="subs-title">${esc(selected.name)} Abonelikleri</h2>
+        ${selected ? `<h2 class="subs-title">${esc(t("subsTitle", { cat: catName(selected.name) }))}</h2>
           ${selected.items.map(subPanel).join("")}`
-          : `<div class="panel empty">Tespit edilen abonelik kalmadı.<br>${resetButton()}</div>`}
+          : `<div class="panel empty">${t("noSubs")}<br>${resetButton()}</div>`}
       </div>
     </div>`;
 }
@@ -294,67 +318,67 @@ function hikeHtml(s) {
   const capped = s.limit <= z.eski_fiyat;
   return `<div class="hike ${capped ? "capped" : ""}">
     <div class="hike-text">
-      <b>${ICON.trend} %${pct(z.oran_yuzde)} zam</b>
-      <span>${monthYear(z.tarih)} itibarıyla ${money(z.eski_fiyat)} → ${money(z.yeni_fiyat)}</span>
+      <b>${ICON.trend} ${t("hike", { p: pct(z.oran_yuzde) })}</b>
+      <span>${t("hikeSince", { month: monthYear(z.tarih), old: money(z.eski_fiyat), new: money(z.yeni_fiyat) })}</span>
     </div>
     ${capped
-      ? `<span class="hike-state">${ICON.lock}Limit eski fiyatta</span>`
+      ? `<span class="hike-state">${ICON.lock}${t("limitAtOld")}</span>`
       : isFrozen(s) ? ""
-      : `<button class="btn small" data-action="cap-limit">${ICON.lock}Limiti ${tl(z.eski_fiyat)}'ye sabitle</button>`}
+      : `<button class="btn small" data-action="cap-limit">${ICON.lock}${t("capLimit", { amount: tl(z.eski_fiyat) })}</button>`}
   </div>`;
 }
 
 function subPanel(s) {
   const frozen = isFrozen(s);
   const churn = churnOf(s);
-  const risk = frozen ? { cls: "yuksek", text: "Kart dondurulmuş" } : riskLevel(churn.churn_risk);
+  const risk = frozen ? { cls: "yuksek", text: t("cardFrozen") } : riskLevel(churn.churn_risk);
   const ai = ui.state.kullanici_ai[s.id];
   const busy = ui.aiBusy.has(s.id);
   const err = ui.aiErrors[s.id];
 
   let aiHtml = "";
   if (busy) {
-    aiHtml = `<div class="skeleton" aria-label="Analiz ediliyor"><i class="big"></i><i style="width:60%"></i><i style="width:92%"></i><i style="width:78%"></i></div>`;
+    aiHtml = `<div class="skeleton" aria-label="${t("analyzing")}"><i class="big"></i><i style="width:60%"></i><i style="width:92%"></i><i style="width:78%"></i></div>`;
   } else if (err) {
     aiHtml = `<div class="ai-error">${esc(err)}</div>`;
   } else if (ai) {
     aiHtml = `<div class="ai-out">
       <div class="ai-lead">${esc(ai.ozet)}</div>
-      <div class="ai-box"><div class="head"><span class="label">AI Analizi</span><span class="when" data-ago="${esc(ai.zaman)}">${ago(ai.zaman)}</span></div>
+      <div class="ai-box"><div class="head"><span class="label">${t("aiAnalysis")}</span><span class="when" data-ago="${esc(ai.zaman)}">${ago(ai.zaman)}</span></div>
         <ul>${ai.maddeler.map((m) => `<li>${esc(m)}</li>`).join("")}</ul></div>
     </div>`;
   }
 
   return `<article class="sub-panel" data-sub="${s.id}" aria-label="${esc(s.ad)}">
-    <span class="status-badge ${frozen ? "frozen" : ""}">${frozen ? "Donduruldu" : "Aktif"}</span>
+    <span class="status-badge ${frozen ? "frozen" : ""}">${statusName(s.durum)}</span>
     <div class="sub-card-col">
       ${cardHtml(s, s.limit)}
       ${usageHtml(s, s.limit)}
-      <label class="limit-label" for="limit-${s.id}">Aylık harcama limiti (₺)</label>
+      <label class="limit-label" for="limit-${s.id}">${t("limitLabel")}</label>
       <div class="limit-row">
         <div class="num-input">
           <input id="limit-${s.id}" type="text" inputmode="decimal" autocomplete="off" value="${limitText(s.limit)}" data-limit-input="${s.id}">
-          <div class="spin-btns"><button data-action="step" data-step="1" tabindex="-1" aria-label="Limiti 1 ₺ artır">▲</button><button data-action="step" data-step="-1" tabindex="-1" aria-label="Limiti 1 ₺ azalt">▼</button></div>
+          <div class="spin-btns"><button data-action="step" data-step="1" tabindex="-1" aria-label="${t("stepUp")}">▲</button><button data-action="step" data-step="-1" tabindex="-1" aria-label="${t("stepDown")}">▼</button></div>
         </div>
-        <button class="save-btn" data-action="save-limit" disabled aria-label="Limiti kaydet" title="Limiti kaydet">${ICON.check}</button>
+        <button class="save-btn" data-action="save-limit" disabled aria-label="${t("saveLimit")}" title="${t("saveLimit")}">${ICON.check}</button>
       </div>
       <div class="warn-slot">${warnHtml(s, s.limit)}</div>
     </div>
     <div class="sub-info-col">
       <h3 class="sub-name"><i class="risk-dot ${risk.cls}" title="${risk.text}"></i>${esc(s.ad)}</h3>
-      <div class="sub-cat">${esc(s.kategori)}</div>
+      <div class="sub-cat">${esc(catName(s.kategori))}</div>
       <div class="sub-line">
-        <span>Aylık ücret: <b>${money(s.fiyat)}</b></span><span class="sep">·</span>
-        <span>Maaşa oranı: <b>%${pct((100 * s.fiyat) / salary(), 2)}</b></span><span class="sep">·</span>
-        <span>Son ödeme: <b>${dmy(s.son_odeme)}</b></span>
+        <span>${t("monthlyFee")}: <b>${money(s.fiyat)}</b></span><span class="sep">·</span>
+        <span>${t("salaryRatio")}: <b>${pct((100 * s.fiyat) / salary(), 2)}</b></span><span class="sep">·</span>
+        <span>${t("lastPayment")}: <b>${dmy(s.son_odeme)}</b></span>
       </div>
       ${hikeHtml(s)}
       <div class="actions">
         ${frozen
-          ? `<button class="btn activate" data-action="status" data-status="Aktif">${ICON.play}Kartı Aktif Et</button>`
-          : `<button class="btn" data-action="status" data-status="Donduruldu">${ICON.snow}Kartı Dondur</button>`}
-        <button class="btn" data-action="delete">${ICON.trash}Kartı Sil</button>
-        <button class="btn icon ${busy ? "busy" : ""}" data-action="ai" aria-label="${esc(s.ad)} için AI analizi" title="AI ile analiz et" ${busy ? "disabled" : ""}>${ICON.spark}</button>
+          ? `<button class="btn activate" data-action="status" data-status="Aktif">${ICON.play}${t("activate")}</button>`
+          : `<button class="btn" data-action="status" data-status="Donduruldu">${ICON.snow}${t("freeze")}</button>`}
+        <button class="btn" data-action="delete">${ICON.trash}${t("delete")}</button>
+        <button class="btn icon ${busy ? "busy" : ""}" data-action="ai" aria-label="${esc(t("aiFor", { name: s.ad }))}" title="${t("aiTitle")}" ${busy ? "disabled" : ""}>${ICON.spark}</button>
       </div>
       ${aiHtml}
     </div>
@@ -364,13 +388,13 @@ function subPanel(s) {
 function cardHtml(s, limit) {
   const frozen = isFrozen(s);
   return `<div class="vcard ${frozen ? "is-frozen" : ""}" aria-hidden="true">
-    <div class="row"><span class="bank"><b>MOKA</b> SANAL KART</span><span class="pill">${frozen ? "DONDURULDU" : "AKTİF"}</span></div>
+    <div class="row"><span class="bank"><b>MOKA</b> ${t("cardBank")}</span><span class="pill">${frozen ? t("cardFrozenPill") : t("cardActive")}</span></div>
     <div class="chip-img"></div>
     <div class="num">••••&nbsp; ••••&nbsp; ••••&nbsp; ${s.kart_no}</div>
     <div class="meta">
-      <span>SERVİS<b>${esc(s.ad)}</b></span>
-      <span>LİMİT<b class="card-limit">${tl(limit)}</b></span>
-      <span>SONRAKİ<b>${frozen ? "—" : dmy(s.sonraki_odeme)}</b></span>
+      <span>${t("cardService")}<b>${esc(s.ad)}</b></span>
+      <span>${t("cardLimit")}<b class="card-limit">${tl(limit)}</b></span>
+      <span>${t("cardNext")}<b>${frozen ? "—" : dmy(s.sonraki_odeme)}</b></span>
     </div>
   </div>`;
 }
@@ -379,13 +403,13 @@ function usageHtml(s, limit) {
   const usedNow = isFrozen(s) ? 0 : s.fiyat;
   const over = usedNow > limit;
   const w = limit > 0 ? Math.min(100, (100 * usedNow) / limit) : (usedNow ? 100 : 0);
-  return `<div class="usage ${over ? "over" : ""}"><div class="top"><span>Kullanım</span><span><b>${tl(usedNow)}</b> / ${tl(limit)}</span></div>
+  return `<div class="usage ${over ? "over" : ""}"><div class="top"><span>${t("usage")}</span><span><b>${tl(usedNow)}</b> / ${tl(limit)}</span></div>
     <div class="bar"><div style="width:${w}%"></div></div></div>`;
 }
 
 function warnHtml(s, limit) {
   return limit < s.fiyat
-    ? `<div class="limit-warn" role="status">${ICON.alert}<span>Limit ücretin altında. Sonraki çekim reddedilecek.</span></div>` : "";
+    ? `<div class="limit-warn" role="status">${ICON.alert}<span>${t("limitWarn")}</span></div>` : "";
 }
 
 function onLimitInput(input) {
@@ -404,7 +428,7 @@ function onLimitInput(input) {
   btn.classList.toggle("dirty", dirty);
 }
 
-async function saveLimit(subId, value, message = "Kart limiti güncellendi.") {
+async function saveLimit(subId, value, message = t("limitUpdated")) {
   try {
     setState(await api("POST", `/api/abonelik/${subId}/limit`, { limit: value }));
     toast(message);
@@ -414,7 +438,7 @@ async function saveLimit(subId, value, message = "Kart limiti güncellendi.") {
 function renderB2B() {
   const list = subs();
   if (!list.length) {
-    $main.innerHTML = `${pageHead("Müşteri Profil Analizi")}<div class="panel empty">Analiz edilecek abonelik yok.<br>${resetButton()}</div>`;
+    $main.innerHTML = `${pageHead(t("profileTitle"))}<div class="panel empty">${t("noCompany")}<br>${resetButton()}</div>`;
     return;
   }
   if (!list.find((s) => s.id === ui.company)) ui.company = list[0].id;
@@ -426,7 +450,7 @@ function renderB2B() {
   const hasAi = c.kaynak !== "tahmini";
 
   const months = ui.state.aylar.map(({ yil, ay }) => ({
-    label: MONTHS_SHORT[ay - 1],
+    label: L.monthsShort[ay - 1],
     value: s.odemeler.filter((o) => {
       const d = parseDate(o.tarih);
       return d.getFullYear() === yil && d.getMonth() + 1 === ay;
@@ -441,50 +465,46 @@ function renderB2B() {
   } else if (pendingAi) {
     actions = `<div class="skeleton" style="margin-top:14px"><i style="width:30%"></i><i style="width:85%"></i><i style="width:26%;margin-top:18px"></i><i style="width:78%"></i><i style="width:32%;margin-top:18px"></i><i style="width:70%"></i></div>`;
   } else {
-    actions = `<div class="ai-error">${esc(c.hata || "AI analizi henüz çalışmadı. 'Analizi Yenile' butonunu kullanın.")}</div>`;
+    actions = `<div class="ai-error">${esc(c.hata || t("aiNotRun"))}</div>`;
   }
 
   $main.innerHTML = `
-    ${pageHead("Müşteri Profil Analizi")}
+    ${pageHead(t("profileTitle"))}
     <div class="b2b-bar">
-      <select class="select" data-action="company" aria-label="Abonelik seçin">
+      <select class="select" data-action="company" aria-label="${t("pickSub")}">
         ${list.map((x) => `<option value="${x.id}" ${x.id === s.id ? "selected" : ""}>${esc(x.ad)}</option>`).join("")}
       </select>
       <div class="b2b-right">
-        <button class="btn outline-accent" data-action="report">${ICON.shield}Anonimleştirilmiş Hesap Raporu</button>
-        <span class="updated">Son güncelleme: ${hasAi ? longDateTime(c.zaman) : pendingAi ? "analiz ediliyor…" : "—"}</span>
+        <button class="btn outline-accent" data-action="report">${ICON.shield}${t("report")}</button>
+        <span class="updated">${t("lastUpdate", { when: hasAi ? longDateTime(c.zaman) : pendingAi ? t("analyzingDots") : "—" })}</span>
       </div>
     </div>
 
     <div class="kpis five">
-      <div class="panel kpi"><div class="label">Churn Riski</div><div class="value">%${c.churn_risk}</div><div class="sub">${level.text}${hasAi ? "" : " · tahmini"}</div></div>
-      <div class="panel kpi"><div class="label">Aylık Ücret</div><div class="value">${money(s.fiyat)}</div><div class="sub">Maaşa oranı %${pct((100 * s.fiyat) / salary(), 2)}${s.zam ? ` · %${pct(s.zam.oran_yuzde)} zamlı` : ""}</div></div>
-      <div class="panel kpi"><div class="label">Rakip Abonelik</div><div class="value">${rivals}</div><div class="sub">${esc(s.kategori)} kategorisinde</div></div>
-      <div class="panel kpi"><div class="label">Hesap Durumu</div><div class="chip ${isFrozen(s) ? "" : "aktif"}">${s.durum}</div><div class="sub">Kart limiti ${tl(s.limit)}</div></div>
-      <div class="panel kpi danger"><div class="label">Gelir Kaybı Riski</div><div class="value">${money(s.fiyat)}<small>/ ay</small></div><div class="sub">${tl(12 * s.fiyat)} / yıl</div></div>
+      <div class="panel kpi"><div class="label">${t("churn")}</div><div class="value">${pct(c.churn_risk, 0)}</div><div class="sub">${level.text}${hasAi ? "" : ` · ${t("estimated")}`}</div></div>
+      <div class="panel kpi"><div class="label">${t("fee")}</div><div class="value">${money(s.fiyat)}</div><div class="sub">${t("feeSub", { p: pct((100 * s.fiyat) / salary(), 2) })}${s.zam ? ` · ${t("hiked", { p: pct(s.zam.oran_yuzde) })}` : ""}</div></div>
+      <div class="panel kpi"><div class="label">${t("rivals")}</div><div class="value">${rivals}</div><div class="sub">${esc(t("rivalsSub", { cat: catName(s.kategori) }))}</div></div>
+      <div class="panel kpi"><div class="label">${t("account")}</div><div class="chip ${isFrozen(s) ? "" : "aktif"}">${statusName(s.durum)}</div><div class="sub">${t("cardLimitSub", { amount: tl(s.limit) })}</div></div>
+      <div class="panel kpi danger"><div class="label">${t("revenueRisk")}</div><div class="value">${money(s.fiyat)}<small>${t("perMonth")}</small></div><div class="sub">${t("perYear", { amount: tl(12 * s.fiyat) })}</div></div>
     </div>
 
     <div class="b2b-grid">
       <div class="panel churn-panel">
-        <div class="label plain">Churn Riski
-          <span class="info" tabindex="0" aria-describedby="churn-tip">${ICON.info}<span class="tooltip" id="churn-tip" role="tooltip"><b>Churn Skoru Nasıl Hesaplanıyor?</b>
-            AI modeli; işlem geçmişi, ödeme düzeni, aynı kategorideki diğer abonelikler, abonelik maliyeti,
-            son zamlar, toplam abonelik yükü ve harcama alışkanlıklarını birlikte analiz ederek her kullanıcı için bir
-            davranış profili oluşturur. Bu profil üzerinden ilgili aboneliğin iptal edilme (churn) olasılığı
-            yüzdesel olarak hesaplanır. 0–39 düşük, 40–64 orta, 65 ve üzeri yüksek risk sayılır; en güçlü sinyal
-            kartın dondurulması, kesintisiz ödeme geçmişi ise riski düşürür.</span></span>
+        <div class="label plain">${t("churn")}
+          <span class="info" tabindex="0" aria-describedby="churn-tip">${ICON.info}<span class="tooltip" id="churn-tip" role="tooltip"><b>${t("churnTipTitle")}</b>
+            ${t("churnTip")}</span></span>
         </div>
-        <div class="ring">${ringSvg(c.churn_risk)}<div class="val">%${c.churn_risk}</div></div>
-        <button class="btn small" data-action="explain">${ICON.spark}AI Açıklamasını Gör</button>
+        <div class="ring">${ringSvg(c.churn_risk)}<div class="val">${pct(c.churn_risk, 0)}</div></div>
+        <button class="btn small" data-action="explain">${ICON.spark}${t("explain")}</button>
       </div>
       <div class="panel chart-panel">
-        <div class="label plain">Son 6 Ay Ödeme Geçmişi</div>
-        ${areaSvg(months, { width: isPhone() ? 380 : 760, height: isPhone() ? 220 : 200, yTicks: true, label: `${s.ad} son 6 ay ödemeleri` })}
+        <div class="label plain">${t("payHistory")}</div>
+        ${areaSvg(months, { width: isPhone() ? 380 : 760, height: isPhone() ? 220 : 200, yTicks: true, label: t("payHistoryAria", { name: s.ad }) })}
       </div>
     </div>
 
     <div class="panel actions-list">
-      <div class="label plain">Önerilen Aksiyonlar</div>
+      <div class="label plain">${t("actions")}</div>
       ${actions}
     </div>`;
 }
@@ -494,7 +514,7 @@ function openModal(title, bodyHtml, wide = false) {
   lastFocus = document.activeElement;
   document.getElementById("modal-root").innerHTML = `<div class="overlay" data-action="close-modal">
     <div class="modal ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-labelledby="modal-title">
-      <div class="modal-head"><h3 id="modal-title">${title}</h3><button class="modal-close" data-action="close-modal" aria-label="Kapat">×</button></div>
+      <div class="modal-head"><h3 id="modal-title">${title}</h3><button class="modal-close" data-action="close-modal" aria-label="${t("close")}">×</button></div>
       ${bodyHtml}
     </div></div>`;
   document.querySelector(".modal-close").focus();
@@ -515,49 +535,42 @@ function openExplain() {
   } else if (ui.state.bekleyen.includes(s.id)) {
     body = `<div class="skeleton"><i></i><i style="width:85%"></i><i style="width:92%"></i><i style="width:70%"></i></div>`;
   } else {
-    body = `<div class="ai-error">${esc(c.hata || "AI açıklaması henüz hazır değil.")}</div>`;
+    body = `<div class="ai-error">${esc(c.hata || t("explainNotReady"))}</div>`;
   }
-  openModal("AI Risk Açıklaması", `
-    <div class="risk-box"><div><div class="label">Churn Riski</div><div class="n">${esc(s.ad.toLocaleUpperCase("tr-TR"))}</div></div><div class="v">%${c.churn_risk}</div></div>
+  openModal(t("explainTitle"), `
+    <div class="risk-box"><div><div class="label">${t("churn")}</div><div class="n">${esc(s.ad.toLocaleUpperCase(L.locale))}</div></div><div class="v">${pct(c.churn_risk, 0)}</div></div>
     <div class="ai-box flat">
-      <div class="head"><span class="label">AI'ın Değerlendirmesi</span><span class="when">${c.kaynak !== "tahmini" ? ago(c.zaman) : ""}</span></div>
+      <div class="head"><span class="label">${t("aiVerdict")}</span><span class="when">${c.kaynak !== "tahmini" ? ago(c.zaman) : ""}</span></div>
       ${body}
     </div>`);
 }
 
 const REPORT_FIELDS = [
-  ["anonim_kullanici_id", "Anonim kullanıcı kimliği"],
-  ["hizmet", "Hizmet"],
-  ["kategori", "Kategori"],
-  ["aylik_ucret_tl", "Aylık ücret", "tl"],
-  ["maasa_orani_yuzde", "Ücretin maaşa oranı", "pct"],
-  ["fiyat_artisi", "Son zam", "hike"],
-  ["sanal_kart_durumu", "Sanal kart durumu"],
-  ["dondurma_tarihi", "Dondurma tarihi", "date"],
-  ["sanal_kart_aylik_limiti_tl", "Kart limiti", "tl"],
-  ["limit_ucretin_altinda_mi", "Limit ücretin altında mı", "bool"],
-  ["kesintisiz_odeme_ay_sayisi", "Kesintisiz ödenen ay"],
-  ["odeme_gecmisi", "Ödeme geçmişi", "payments"],
-  ["kategorideki_rakip_sayisi", "Rakip abonelik sayısı"],
-  ["ayni_kategorideki_diger_abonelikler", "Aynı kategorideki abonelikler", "rivals"],
-  ["rakip_ortalama_ucret_tl", "Rakiplerin ortalama ücreti", "tl"],
-  ["kategorinin_en_pahalisi_mi", "Kategorinin en pahalısı mı", "bool"],
-  ["toplam_aktif_abonelik_yuku_tl", "Toplam aktif abonelik yükü", "tl"],
-  ["toplam_abonelik_yukunun_maasa_orani_yuzde", "Abonelik yükünün maaşa oranı", "pct"],
-  ["genel_harcama_trendi", "Genel harcama eğilimi", "text"],
+  ["anonim_kullanici_id"], ["hizmet"], ["kategori", "category"], ["aylik_ucret_tl", "tl"],
+  ["maasa_orani_yuzde", "pct"], ["fiyat_artisi", "hike"], ["sanal_kart_durumu", "status"],
+  ["dondurma_tarihi", "date"], ["sanal_kart_aylik_limiti_tl", "tl"], ["limit_ucretin_altinda_mi", "bool"],
+  ["kesintisiz_odeme_ay_sayisi"], ["odeme_gecmisi", "payments"], ["kategorideki_rakip_sayisi"],
+  ["ayni_kategorideki_diger_abonelikler", "rivals"], ["rakip_ortalama_ucret_tl", "tl"],
+  ["kategorinin_en_pahalisi_mi", "bool"], ["toplam_aktif_abonelik_yuku_tl", "tl"],
+  ["toplam_abonelik_yukunun_maasa_orani_yuzde", "pct"], ["genel_harcama_trendi", "trend"],
 ];
 
 function reportValue(v, kind) {
   if (v === null || v === undefined || v === "") return "—";
   switch (kind) {
     case "tl": return esc(tl(v));
-    case "pct": return `%${pct(v, 2)}`;
-    case "bool": return v ? "Evet" : "Hayır";
+    case "pct": return pct(v, 2);
+    case "bool": return v ? t("yes") : t("no");
     case "date": return dmy(v);
-    case "text": return esc(String(v).charAt(0).toLocaleUpperCase("tr-TR") + String(v).slice(1));
-    case "hike": return `${esc(tl(v.eski_fiyat))} → ${esc(tl(v.yeni_fiyat))} (%${pct(v.oran_yuzde)}), ${monthYear(v.tarih)}`;
+    case "category": return esc(catName(v));
+    case "status": return esc(statusName(v));
+    case "trend": {
+      const s = L.trend[v] || v;
+      return esc(s.charAt(0).toLocaleUpperCase(L.locale) + s.slice(1));
+    }
+    case "hike": return `${esc(tl(v.eski_fiyat))} → ${esc(tl(v.yeni_fiyat))} (${pct(v.oran_yuzde)}), ${monthYear(v.tarih)}`;
     case "payments": return v.map((p) => `${dmy(p.tarih)} · ${esc(tl(p.tutar))}`).join("<br>");
-    case "rivals": return v.map((r) => `${esc(r.hizmet)} · ${esc(tl(r.aylik_ucret_tl))} · ${esc(r.durum)}`).join("<br>");
+    case "rivals": return v.map((r) => `${esc(r.hizmet)} · ${esc(tl(r.aylik_ucret_tl))} · ${esc(statusName(r.durum))}`).join("<br>");
     default: return esc(v);
   }
 }
@@ -566,56 +579,56 @@ async function openReport() {
   try {
     const r = await api("GET", `/api/b2b/${ui.company}/rapor`);
     const known = new Set(REPORT_FIELDS.map(([k]) => k));
-    const rows = [...REPORT_FIELDS.filter(([k]) => k in r), ...Object.keys(r).filter((k) => !known.has(k)).map((k) => [k, k])];
-    openModal("Anonimleştirilmiş Hesap Raporu", `
-      <p class="modal-note">Şirketlere kimlik bilgisi paylaşılmaz; yalnızca aşağıdaki anonim finansal davranış sinyalleri iletilir.</p>
-      <div class="kv">${rows.map(([k, label, kind]) => `<div class="k">${esc(label)}<code>${esc(k)}</code></div>
+    const rows = [...REPORT_FIELDS.filter(([k]) => k in r), ...Object.keys(r).filter((k) => !known.has(k)).map((k) => [k])];
+    openModal(t("report"), `
+      <p class="modal-note">${t("reportNote")}</p>
+      <div class="kv">${rows.map(([k, kind]) => `<div class="k">${esc(L.report[k] || k)}<code>${esc(k)}</code></div>
         <div class="v">${reportValue(r[k], kind)}</div>`).join("")}</div>`, true);
   } catch (e) { toastError(e.message); }
 }
 
 function renderTransactions() {
   const q = ui.txQuery.trim().toLocaleUpperCase("tr-TR");
-  const rows = ui.state.islemler.filter((t) =>
-    (ui.txFilter === "Tümü" || t.tip === ui.txFilter) &&
-    (!q || t.aciklama.toLocaleUpperCase("tr-TR").includes(q)));
-  const points = ui.state.aylik_toplamlar.map((m) => ({ label: MONTHS_SHORT[m.ay - 1], value: m.gider }));
+  const rows = ui.state.islemler.filter((tx) =>
+    (ui.txFilter === "Tümü" || tx.tip === ui.txFilter) &&
+    (!q || tx.aciklama.toLocaleUpperCase("tr-TR").includes(q) || merchantName(tx.aciklama).toLocaleUpperCase("tr-TR").includes(q)));
+  const points = ui.state.aylik_toplamlar.map((m) => ({ label: L.monthsShort[m.ay - 1], value: m.gider }));
   const oz = ui.state.ozet;
 
   let summary;
   if (ui.summaryBusy) summary = `<div class="skeleton"><i style="width:92%"></i><i style="width:70%"></i></div>`;
   else if (oz && oz.ozet) summary = `<p>${esc(oz.ozet)}</p>`;
-  else summary = `<p class="muted">Son 6 aylık harcama davranışının kişisel özetini görmek için sağ üstteki ışıltı simgesine dokun.</p>`;
+  else summary = `<p class="muted">${t("summaryHint")}</p>`;
 
-  const seg = (name, icon) => `<button class="${ui.txFilter === name ? "on" : ""}" data-action="tx-filter" data-filter="${name}" aria-pressed="${ui.txFilter === name}">${icon}${name}</button>`;
+  const seg = (name, icon) => `<button class="${ui.txFilter === name ? "on" : ""}" data-action="tx-filter" data-filter="${name}" aria-pressed="${ui.txFilter === name}">${icon}${typeName(name)}</button>`;
 
   $main.innerHTML = `
-    ${pageHead("İşlem Geçmişi")}
-    <div class="tx-sub"><span class="ai-badge">${ICON.spark}Yapay Zekâ Üretimi</span>6 aylık sentetik Open Banking simülasyonu</div>
+    ${pageHead(t("txTitle"))}
+    <div class="tx-sub"><span class="ai-badge">${ICON.spark}${t("aiMade")}</span>${t("txSub")}</div>
 
     <div class="panel summary-panel">
-      <div class="label plain">Son 6 Ay Özeti</div>
+      <div class="label plain">${t("summaryTitle")}</div>
       ${summary}
-      <button class="btn icon ${ui.summaryBusy ? "busy" : ""}" data-action="summary" aria-label="AI harcama özeti oluştur" title="AI özeti oluştur" ${ui.summaryBusy ? "disabled" : ""}>${ICON.spark}</button>
+      <button class="btn icon ${ui.summaryBusy ? "busy" : ""}" data-action="summary" aria-label="${t("summaryBtn")}" title="${t("summaryBtnTitle")}" ${ui.summaryBusy ? "disabled" : ""}>${ICON.spark}</button>
     </div>
 
     <div class="tx-tools">
-      <label class="search">${ICON.search}<input type="search" placeholder="Açıklamada ara..." value="${esc(ui.txQuery)}" data-tx-search aria-label="Açıklamada ara"></label>
-      <div class="seg" role="group" aria-label="İşlem türü">${seg("Tümü", ICON.list)}${seg("Gelir", ICON.down)}${seg("Gider", ICON.up)}</div>
+      <label class="search">${ICON.search}<input type="search" placeholder="${t("search")}" value="${esc(ui.txQuery)}" data-tx-search aria-label="${t("search")}"></label>
+      <div class="seg" role="group" aria-label="${t("txType")}">${seg("Tümü", ICON.list)}${seg("Gelir", ICON.down)}${seg("Gider", ICON.up)}</div>
     </div>
 
     <div class="panel tx-chart">
-      <div class="label plain">Aylık Gider (₺) — Son 6 Ay</div>
-      ${areaSvg(points, { width: isPhone() ? 380 : 1200, height: isPhone() ? 220 : 230, yTicks: true, label: "Son 6 ay aylık gider" })}
+      <div class="label plain">${t("monthlySpend")}</div>
+      ${areaSvg(points, { width: isPhone() ? 380 : 1200, height: isPhone() ? 220 : 230, yTicks: true, label: t("monthlySpendAria") })}
     </div>
 
     <div class="panel table-wrap">
-      <div class="table-head"><span class="label plain">İşlemler</span><span class="count">${rows.length} işlem</span></div>
+      <div class="table-head"><span class="label plain">${t("transactions")}</span><span class="count">${t("txCount", { n: rows.length })}</span></div>
       <div class="table-scroll">
-      <table><thead><tr><th>TARİH</th><th>AÇIKLAMA</th><th class="col-type">TİP</th><th class="amt">TUTAR</th></tr></thead>
-      <tbody>${rows.map((t) => `<tr><td>${dmy(t.tarih)}</td><td>${esc(t.aciklama)}</td><td class="col-type">${t.tip}</td>
-        <td class="amt ${t.tutar > 0 ? "in" : ""}">${t.tutar > 0 ? "+" : "−"}${tl(Math.abs(t.tutar))}</td></tr>`).join("")
-        || `<tr><td colspan="4" class="empty">Eşleşen işlem bulunamadı.</td></tr>`}</tbody></table>
+      <table><thead><tr><th>${t("colDate")}</th><th>${t("colDesc")}</th><th class="col-type">${t("colType")}</th><th class="amt">${t("colAmount")}</th></tr></thead>
+      <tbody>${rows.map((tx) => `<tr><td>${dmy(tx.tarih)}</td><td>${esc(merchantName(tx.aciklama))}</td><td class="col-type">${typeName(tx.tip)}</td>
+        <td class="amt ${tx.tutar > 0 ? "in" : ""}">${tx.tutar > 0 ? "+" : "−"}${tl(Math.abs(tx.tutar))}</td></tr>`).join("")
+        || `<tr><td colspan="4" class="empty">${t("noTx")}</td></tr>`}</tbody></table>
     </div></div>`;
 }
 
@@ -625,7 +638,8 @@ function render() {
     a.classList.toggle("active", on);
     if (on) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
   });
-  document.title = `${VIEW_TITLES[ui.view]} · GhostPay`;
+  document.title = `${L.views[ui.view]} · GhostPay`;
+  document.querySelectorAll(".lang-btn [data-lang]").forEach((el) => el.classList.toggle("on", el.dataset.lang === LANG));
   if (!ui.state) return;
   document.getElementById("mode-badge").hidden = ui.state.ai_modu !== "demo";
   if (ui.view === "b2b") renderB2B();
@@ -693,29 +707,29 @@ async function runAction(el, e) {
     }
     case "save-limit": {
       const v = parseAmount(panel.querySelector("[data-limit-input]").value);
-      if (!Number.isFinite(v) || v < 0) return toastError("Geçerli bir limit girin.");
+      if (!Number.isFinite(v) || v < 0) return toastError(t("invalidLimit"));
       return saveLimit(id, v);
     }
     case "cap-limit":
       return saveLimit(id, sub.zam.eski_fiyat,
-        `${sub.ad} limiti ${tl(sub.zam.eski_fiyat)}'ye sabitlendi. Zamlı çekim reddedilecek.`);
+        t("capped", { name: sub.ad, amount: tl(sub.zam.eski_fiyat) }));
     case "status":
       try {
         setState(await api("POST", `/api/abonelik/${id}/durum`, { durum: el.dataset.status }));
-        toast(el.dataset.status === "Aktif" ? `${sub.ad} kartı yeniden aktif.` : `${sub.ad} kartı donduruldu. Sonraki çekim reddedilecek.`);
+        toast(t(el.dataset.status === "Aktif" ? "reactivated" : "frozenToast", { name: sub.ad }));
       } catch (err) { toastError(err.message); }
       return;
     case "delete":
       try {
         setState(await api("DELETE", `/api/abonelik/${id}`));
-        toast(`${sub.ad} sanal kartı silindi.`, {
+        toast(t("deleted", { name: sub.ad }), {
           duration: 6000,
           action: {
-            label: "Geri al",
+            label: t("undo"),
             run: async () => {
               try {
                 setState(await api("POST", `/api/abonelik/${id}/geri-al`));
-                toast(`${sub.ad} kartı geri yüklendi.`);
+                toast(t("restored", { name: sub.ad }));
               } catch (err) { toastError(err.message); }
             },
           },
@@ -760,17 +774,31 @@ async function runAction(el, e) {
       try {
         ui.aiErrors = {};
         setState(await api("POST", "/api/demo/sifirla"));
-        toast("Demo başlangıç durumuna döndü.");
+        toast(t("demoReset"));
       } catch (err) { toastError(err.message); }
       return;
     case "reload":
       return location.reload();
+    case "close-intro":
+      ui.introClosed = true;
+      try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* yoksay */ }
+      document.querySelector(".intro")?.remove();
+      return;
+    case "lang":
+      setLang(LANG === "tr" ? "en" : "tr");
+      applyStaticText();
+      ui.aiErrors = {};
+      render();
+      try {
+        setState(await api("GET", "/api/state"));
+      } catch (err) { toastError(err.message); }
+      return;
     case "refresh":
       el.classList.add("spin");
       ui.aiErrors = {};
       try {
         setState(await api("POST", "/api/ai/yenile"));
-        toast("Yapay zekâ analizleri yenilendi.");
+        toast(t("refreshed"));
       } catch (err) { toastError(err.message); }
       setTimeout(() => el.classList.remove("spin"), 800);
   }
@@ -816,11 +844,12 @@ window.addEventListener("hashchange", routeFromHash);
 window.matchMedia("(max-width: 860px)").addEventListener("change", () => { if (ui.view !== "b2c") render(); });
 
 (async function init() {
+  applyStaticText();
   routeFromHash();
   try {
     setState(await api("GET", "/api/state"));
   } catch (e) {
-    $main.innerHTML = `<div class="panel empty">Sunucuya bağlanılamadı: ${esc(e.message)}<br>
-      <button class="btn activate" data-action="reload">Tekrar dene</button></div>`;
+    $main.innerHTML = `<div class="panel empty">${esc(t("connectError", { msg: e.message }))}<br>
+      <button class="btn activate" data-action="reload">${t("retry")}</button></div>`;
   }
 })();
