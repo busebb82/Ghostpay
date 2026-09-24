@@ -2,56 +2,50 @@
 
 # GhostPay
 
-Abonelik yönetimi için sanal kart ve churn analizi uygulaması
+**Her aboneliğe ayrı sanal kart, zam tespiti ve churn analizi**
 <br>
-*Subscription management with per-subscription virtual cards and churn analysis*
+*Per-subscription virtual cards, price hike detection and churn analytics*
 
 [![CI](https://github.com/busebb82/Ghostpay/actions/workflows/ci.yml/badge.svg)](https://github.com/busebb82/Ghostpay/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![Flask](https://img.shields.io/badge/Flask-3-000000?logo=flask&logoColor=white)
+![Playwright](https://img.shields.io/badge/tested_with-Playwright-2EAD33?logo=playwright&logoColor=white)
 [![License: MIT](https://img.shields.io/badge/license-MIT-a594f9)](LICENSE)
 
-[Türkçe](#türkçe) · [English](#english) · [Canlı demo](https://ghostpay-670i.onrender.com/?lang=tr) · [Live demo](https://ghostpay-670i.onrender.com/?lang=en)
+**[Canlı demo](https://ghostpay-670i.onrender.com/?lang=tr)** · **[Live demo (English)](https://ghostpay-670i.onrender.com/?lang=en)** · [Mimari / Architecture](docs/architecture.md)
 
 <img src="docs/demo.gif" alt="GhostPay demo" width="880">
 
 </div>
 
+> 400'ü aşkın takımın yarıştığı bir hackathonda ilk 30'a kalan proje.
+> A top-30 finalist among 400+ teams at a hackathon.
+
+[Türkçe](#türkçe) · [English](#english)
+
 ---
 
 ## Türkçe
 
-Birçok platformda abonelik iptal etmek zor olduğu için insanlar kullanmadıkları
-servislere ödeme yapmaya devam ediyor. GhostPay her aboneliğe ayrı bir Moka United
-sanal kartı bağlıyor. Kart dondurulabiliyor, silinebiliyor ya da limiti
-değiştirilebiliyor; böylece iptal işlemi ödeme tarafında yapılmış oluyor.
+Abonelik iptali çoğu platformda bilerek zorlaştırıldığı için insanlar kullanmadıkları servislere
+ödemeye devam ediyor. GhostPay bu sorunu ödeme tarafında çözüyor: her abonelik kendi Moka United
+sanal kartıyla ödeniyor, kart tek dokunuşla dondurulabiliyor, silinebiliyor ya da aylık limitle
+sınırlanabiliyor.
 
-Uygulamanın iki paneli var:
+Aynı veri iki taraf için ayrı panelde yorumlanıyor. Kullanıcı nerede tasarruf edebileceğini
+görüyor; abonelik şirketi ise kişisel veri almadan, anonim sinyallerle hangi müşterisini
+kaybetmek üzere olduğunu ve onu nasıl tutabileceğini görüyor.
 
-- **Müşteri paneli:** Abonelik giderleri, kategori dağılımı ve her aboneliğin sanal kartı. Bir servis zam yaptığında uyarı çıkıyor ve kart limiti tek tıkla eski fiyata sabitlenebiliyor.
-- **Şirket paneli:** Abonelik şirketinin göreceği ekran. Kişisel veri olmadan, anonim sinyallerle churn riski, gelir kaybı riski ve müşteriyi tutmak için önerilen kampanyalar.
+### Öne çıkanlar
 
-### Proje hakkında
+- **Sanal kart kontrolü:** Dondurma, yeniden açma, geri alınabilir silme ve aylık limit. Limit ücretin altına inerse sonraki çekimin reddedileceği gösteriliyor.
+- **Zam tespiti:** Ödeme geçmişindeki kalıcı fiyat artışları bulunuyor; kur oynamaları ve tek seferlik sapmalar ayıklanıyor. Limit tek tıkla eski fiyata sabitlenebiliyor.
+- **Churn skoru:** Kart durumu, rakip abonelikler, fiyat, zam ve ödeme düzeninden 0-100 arası açıklanabilir bir skor; her abonelik için üç müşteriyi tutma önerisi.
+- **Yapay zekâ ve yedek motor:** API anahtarı varsa analizler Claude API ile, yoksa aynı biçimde sonuç veren kural tabanlı motorla üretiliyor.
+- **İki dil ve mobil:** Arayüz ve üretilen metinler Türkçe ya da İngilizce; tüm ekranlar telefonda çalışıyor.
+- **Test ve yayın:** Birim testleri ve Playwright ile tarayıcı testleri her push'ta GitHub Actions'ta çalışıyor; uygulama Render'da yayında.
 
-GhostPay'in ilk sürümü bir hackathon için geliştirildi. Hackathon'dan sonra proje; ödeme
-geçmişinden zam tespiti, churn skorunun kalibrasyonu, İngilizce arayüz, tarayıcı testleri ve
-canlıya alma ile geliştirilmeye devam etti.
-
-GhostPay bir demo projesidir ve Moka United'ın resmi bir ürünü değildir; şirket adı senaryoyu
-anlatmak için kullanılmıştır. Tüm veriler sentetiktir.
-
-### Özellikler
-
-| | |
-|---|---|
-| **Müşteri paneli** | Aylık gelir, abonelik gideri, gelire oranı ve dondurulan kartlardan gelen tasarruf. Kategori bazında maliyet dağılımı ve kart limitlerinin kullanımı. |
-| **Sanal kart işlemleri** | Kartı dondurma, tekrar açma, silme (geri alınabilir) ve aylık limit değiştirme. Limit ücretin altına inerse sonraki çekimin reddedileceği gösteriliyor. |
-| **Zam tespiti** | Ödemelerdeki kalıcı fiyat artışları bulunuyor. Kur farkından kaynaklanan küçük oynamalar ve tek seferlik sapmalar zam sayılmıyor. |
-| **Abonelik analizi** | Ödeme geçmişi, zamlar, aynı kategorideki diğer abonelikler ve gelire oran üzerinden kişisel öneri. |
-| **Churn riski** | Her abonelik için 0-100 arası skor. Kartın dondurulması riski en çok artıran sinyal; düzenli ödeme geçmişi riski düşürüyor. |
-| **Retention önerileri** | Her abonelik için 3 kampanya önerisi: zam öncesi fiyat garantisi, yıllık paket, aile paketi gibi. |
-| **İşlem geçmişi** | 6 aylık sentetik Open Banking verisi, arama, gelir/gider filtresi, aylık gider grafiği ve harcama özeti. |
-| **Mobil ve iki dil** | Telefonda da tüm ekranlar kullanılabiliyor. Arayüz ve üretilen analizler Türkçe ya da İngilizce; dil tarayıcıya göre seçiliyor, menüdeki TR/EN düğmesiyle değiştirilebiliyor. |
+### Ekran görüntüleri
 
 <table>
   <tr>
@@ -85,101 +79,36 @@ anlatmak için kullanılmıştır. Tüm veriler sentetiktir.
 
 ### Nasıl çalışıyor
 
-```mermaid
-flowchart LR
-    A[İşlem geçmişi] --> B[Abonelik ve<br>zam tespiti]
-    B --> C[Anonim<br>davranış profili]
-    C --> D{Analiz motoru}
-    D -->|API anahtarı var| E[Claude API]
-    D -->|anahtar yok| F[Kural tabanlı motor]
-    E --> G[Müşteriye öneri]
-    E --> H[Şirkete churn skoru]
-    F --> G
-    F --> H
-```
+1. **Tespit:** Düzenli aralıklarla ve benzer tutarla tekrarlanan ödemeler abonelik olarak ayrılıyor, kalıcı fiyat artışları zam olarak işaretleniyor.
+2. **Profil:** Her abonelik için ücret, gelire oran, zam, rakip abonelikler, kart durumu ve ödeme geçmişinden anonim bir profil çıkarılıyor.
+3. **Analiz:** Profil yapay zekâ motoruna gidiyor; kullanıcıya tasarruf önerisi, şirkete churn skoru ve aksiyonlar dönüyor.
 
-1. En az 3 kez, yaklaşık 30 gün arayla ve benzer tutarla tekrarlanan ödemeler abonelik sayılıyor. Tutar kalıcı olarak %6'dan fazla arttıysa zam olarak işaretleniyor.
-2. Her abonelik için ücret, gelire oran, zam, aynı kategorideki abonelikler, kart durumu, limit ve ödeme geçmişinden bir profil çıkarılıyor. Şirket paneline yalnızca bu anonim bilgiler gidiyor.
-3. Profil analiz motoruna gönderiliyor. Aynı profil için daha önce üretilmiş sonuç varsa tekrar hesaplanmıyor.
+Algoritmaların ve teknik kararların ayrıntısı: [docs/architecture.md](docs/architecture.md)
 
-### Teknik kararlar
+### Teknolojiler
 
-**Abonelik tespiti.** Aynı açıklamayla en az 3 kez, 25-35 gün arayla gelen ve tutarları birbirine
-yakın olan (standart sapma ortalamanın %15'inden az) giderler abonelik sayılıyor. Sonraki ödeme
-tarihi son ödemenin gününe göre hesaplanıyor, kısa aylarda ayın son gününe yuvarlanıyor.
+Python, Flask, Gunicorn, Claude API, framework'süz JavaScript ve SVG grafikler, pytest, Playwright, Ruff, GitHub Actions, Render
 
-**Zam tespiti.** Ödeme geçmişi her noktadan ikiye bölünüp sondan başa doğru deneniyor. Sonraki
-ödemelerin en düşüğü önceki ödemelerin en yükseğinden en az %2 fazlaysa ve ortanca tutar en az %6
-arttıysa o nokta zam kabul ediliyor. Böylece dövizli servislerdeki %3'lük kur oynamaları ve tek
-seferlik yüksek bir çekim zam sayılmıyor.
-
-**Churn skoru.** 20 puandan başlıyor, sinyallere göre artıp azalıyor:
-
-| Sinyal | Etki |
-|---|---|
-| Sanal kart dondurulmuş | +50 |
-| Aynı kategoride aktif rakip abonelik | her biri +7, en fazla +14 |
-| Aktif rakiplerin ortalamasından pahalı | en fazla +10 |
-| Kategorideki en ucuz aktif seçenek | -4 |
-| Ücretin maaşa oranı | en fazla +6 |
-| Kart limiti ücretin altında | +18 |
-| Son zam | zam oranının 1,25 katı, en fazla +20 |
-| Kesintisiz ödenen her ay | -1, en fazla -8 |
-
-Sonuç 0-39 ise düşük, 40-64 orta, 65 ve üzeri yüksek risk. Dondurulmuş bir rakip abonelik rekabet
-sayılmıyor, çünkü kullanıcının o servisi bıraktığını gösteriyor. Claude API'ye de aynı ölçek
-veriliyor.
-
-**Tek worker.** Demo oturumları bellekte tutulduğu için gunicorn tek süreç ve 8 thread ile
-çalışıyor. Birden fazla süreç olsaydı aynı ziyaretçinin istekleri farklı süreçlere düşüp farklı
-veri görebilirdi. Oturumlar ziyaretçi başına bir çerezle ayrılıyor, 2 saat işlem yapılmazsa
-siliniyor ve en fazla 300 oturum tutuluyor.
-
-**Veritabanı yok.** Render'ın ücretsiz planında disk kalıcı değil, her yeniden başlatmada
-siliniyor. Bu yüzden veriler bellekte tutuluyor. Kalıcı veri gerekirse oturumlar Redis'e ya da
-yönetilen bir veritabanına taşınabilir.
-
-**Arayüz.** Framework kullanılmadı; düz JavaScript ile yazıldı, grafikler SVG ile çiziliyor ve
-yazı tipleri sunucudan geliyor. Content Security Policy satır içi script'e izin vermediği için
-tüm tıklamalar `data-action` öznitelikleriyle tek bir yerden yönetiliyor.
-
-**İki dil.** Veri anahtarları (kategori, kart durumu) Türkçe kalıyor, arayüz yalnızca gösterirken
-çeviriyor. Tarayıcı her istekte `X-Lang` başlığını gönderiyor; dil değişince sunucu o ziyaretçinin
-analizlerini yeni dilde baştan üretiyor. Önbellek anahtarı dili de içerdiği için iki dilin sonucu
-birbirine karışmıyor.
-
-**Testler.** `tests/` altındaki birim testleri abonelik ve zam tespitini, churn skorunu, API'yi ve
-iki dildeki metinleri kontrol ediyor. `tests/e2e/` altındaki tarayıcı testleri uygulamayı gerçek bir
-Chromium'da açıp kart dondurma, limit değiştirme, silip geri alma, dil değiştirme ve telefon
-görünümünü deniyor. İkisi de her push'ta GitHub Actions'ta çalışıyor.
-
-**Uyanık tutma.** Ücretsiz sunucu 15 dakika istek gelmezse uyuyor. `keepalive.yml` iş akışı
-siteye düzenli istek atıyor. GitHub zamanlanmış işleri geciktirebildiği için UptimeRobot gibi bir
-dış izleme servisiyle birlikte kullanmak daha güvenilir.
-
-### Analiz motoru
-
-`ANTHROPIC_API_KEY` ortam değişkeni tanımlıysa analizler Claude API ile yapılıyor. Herkese açık
-demoda maliyeti sınırlamak için saatlik çağrı limiti var (`AI_HOURLY_LIMIT`, varsayılan 200).
-
-Claude API'ye profil JSON olarak gönderiliyor ve cevabın biçimi JSON şemasıyla sabitleniyor.
-Aynı profil için daha önce alınmış cevap varsa tekrar istek atılmıyor.
-
-Anahtar yoksa, limit dolduysa ya da API hata verirse aynı biçimdeki sonuçlar kural tabanlı bir
-motorla üretiliyor ve arayüzde "Demo modu" etiketi görünüyor. Canlı demo şu an bu modda çalışıyor.
-
-### Yerelde çalıştırma
+### Kurulum
 
 ```bash
 git clone https://github.com/busebb82/Ghostpay.git
 cd Ghostpay
 python3 -m pip install -r requirements.txt
-python3 app.py            # http://localhost:8501
+python3 app.py                           # http://localhost:8501
 ```
 
 Claude API ile çalıştırmak için önce `export ANTHROPIC_API_KEY="..."` komutunu çalıştırın.
+Anahtar yoksa uygulama kural tabanlı motorla çalışır; canlı demo şu an bu modda.
 
-Canlı sürüm Render'da `render.yaml` ile çalışıyor ve `main` dalına yapılan her birleştirmede güncelleniyor.
+### Testler
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+python3 -m playwright install chromium   # tarayıcı testleri için bir kez
+pytest                                   # 31 birim + 11 tarayıcı testi
+ruff check .
+```
 
 ### Proje yapısı
 
@@ -188,53 +117,33 @@ app.py          Flask sunucusu ve JSON API
 catalog.py      Servis listesi: ad, kategori, fiyat, çekim günü
 detector.py     Abonelik ve zam tespiti, davranış profili
 ai_engine.py    Claude API bağlantısı, önbellek, saatlik limit
-demo_ai.py      Kural tabanlı analiz motoru
+demo_ai.py      Kural tabanlı analiz motoru (Türkçe ve İngilizce)
 mock_data.py    6 aylık sentetik işlem geçmişi
-static/         Arayüz (HTML, CSS, JavaScript, çeviriler, yazı tipleri)
-tests/          Birim testleri
-tests/e2e/      Playwright ile tarayıcı testleri
+static/         Arayüz: HTML, CSS, JavaScript, çeviriler, yazı tipleri
+tests/          Birim testleri; tests/e2e/ altında tarayıcı testleri
+docs/           Mimari belgesi, ekran görüntüleri ve demo GIF'i
 ```
-
-### Geliştirme
-
-```bash
-python3 -m pip install -r requirements-dev.txt
-python3 -m playwright install chromium   # tarayıcı testleri için bir kez
-pytest                                   # birim ve tarayıcı testleri
-ruff check .
-```
-
-Her ziyaretçinin demo verisi ayrı tutuluyor, yapılan değişiklikler diğer ziyaretçileri
-etkilemiyor. Veriler bellekte duruyor; 2 saat işlem yapılmayan oturumlar siliniyor.
 
 ---
 
 ## English
 
-People often keep paying for subscriptions they no longer use because cancelling is
-hard. GhostPay gives every subscription its own Moka United virtual card that can be
-frozen, deleted or given a monthly limit, so the subscription can be stopped from the
-payment side.
+Many platforms make cancelling a subscription deliberately hard, so people keep paying for
+services they no longer use. GhostPay solves this on the payment side: every subscription is paid
+with its own Moka United virtual card that can be frozen, deleted or capped with a monthly limit in
+one tap.
 
-The app has two dashboards:
+The same data powers two dashboards. Users see where they can save money; subscription providers
+see, from anonymized signals only, which customers they are about to lose and how to keep them.
 
-- **Customer dashboard:** subscription spending, category breakdown and a virtual card for each subscription. When a service raises its price, a warning appears and the card limit can be locked at the old price.
-- **Company dashboard:** what the subscription provider sees. Churn risk, revenue at risk and suggested retention offers, based only on anonymized signals.
+### Highlights
 
-GhostPay started as a hackathon project. After the hackathon it kept growing with price hike
-detection, a calibrated churn score, an English interface, browser tests and a public deployment.
-
-GhostPay is a demo project and not an official Moka United product; the company name is used
-for the scenario. All data is synthetic.
-
-### Features
-
-- Freeze, reactivate, delete (with undo) and set a monthly limit on each virtual card
-- Price hike detection that ignores currency noise and one-off spikes
-- Personal advice per subscription based on payment history, price hikes and similar subscriptions
-- Churn score from 0 to 100 with an explanation and three retention offers
-- Six months of synthetic Open Banking transactions with search, filters and a monthly chart
-- Works on phones, in Turkish and English (picked from the browser, switchable with the TR/EN button)
+- **Virtual card controls:** freeze, reactivate, delete with undo and set a monthly limit, with a warning when the limit is below the price.
+- **Price hike detection:** permanent price increases are found in the payment history while currency noise and one-off spikes are ignored. The limit can be locked at the old price in one click.
+- **Churn score:** an explainable 0-100 score built from card status, competing subscriptions, price, hikes and payment regularity, with three retention offers per subscription.
+- **AI with a fallback:** analyses come from the Claude API when a key is set, otherwise from a rule-based engine that returns the same format.
+- **Bilingual and mobile:** the interface and generated texts are available in Turkish and English, and every screen works on phones.
+- **Tested and deployed:** unit tests and Playwright browser tests run on every push in GitHub Actions; the app is live on Render.
 
 <table>
   <tr>
@@ -247,42 +156,31 @@ for the scenario. All data is synthetic.
   </tr>
 </table>
 
-### Analysis engine
+### Tech stack
 
-With `ANTHROPIC_API_KEY` set, analyses come from the Claude API. Results are cached per input and
-calls are capped per hour (`AI_HOURLY_LIMIT`, default 200). Without a key, or once the cap is
-reached, a rule-based engine returns results in the same format.
+Python, Flask, Gunicorn, Claude API, framework-free JavaScript with SVG charts, pytest, Playwright, Ruff, GitHub Actions, Render
 
-### Design notes
-
-- **Price hikes:** the payment history is split at each point, newest first. A point counts as a hike when every later charge is at least 2% above every earlier one and the median rises by at least 6%, so currency noise and one-off spikes are ignored.
-- **Churn score:** starts at 20 and moves with the signals in the table in the Turkish section: +50 for a frozen card, +18 for a limit below the price, up to +20 for a price hike, minus one point per paid month (at most 8). 0-39 is low, 40-64 medium, 65+ high.
-- **Single worker:** demo sessions live in memory, so gunicorn runs one process with 8 threads. Render's free plan has no persistent disk, which is why there is no database.
-- **Two languages:** data keys stay Turkish and the interface translates them for display. The browser sends an `X-Lang` header; when it changes, the server regenerates that visitor's analyses in the new language, and the cache key includes the language.
-- **Tests:** unit tests cover detection, the churn score, the API and both languages. Browser tests in `tests/e2e/` drive the app in a real Chromium with Playwright. Both run on every push.
-- **Keep alive:** a scheduled workflow pings the site so the free server does not sleep.
-
-The live demo currently runs the rule-based engine.
-
-### Run locally
+### Getting started
 
 ```bash
 git clone https://github.com/busebb82/Ghostpay.git
 cd Ghostpay
 python3 -m pip install -r requirements.txt
-python3 app.py            # http://localhost:8501
+python3 app.py                           # http://localhost:8501
 ```
 
-Tests: `pip install -r requirements-dev.txt && python -m playwright install chromium && pytest`
+Set `ANTHROPIC_API_KEY` to use the Claude API; without it the rule-based engine is used, which is
+how the live demo currently runs. For tests, install `requirements-dev.txt`, run
+`python3 -m playwright install chromium` once and then `pytest`.
 
-### Tech stack
-
-Python, Flask, Gunicorn, Claude API, vanilla JavaScript with SVG charts, pytest, Playwright, Ruff, GitHub Actions, Render
+Algorithms and design decisions are described in [docs/architecture.md](docs/architecture.md#english).
 
 ---
 
 <div align="center">
-<sub>Demo verileri sentetiktir. All demo data is synthetic.</sub>
+<sub>GhostPay bir demo projesidir ve Moka United'ın resmi bir ürünü değildir; tüm veriler sentetiktir.</sub>
 <br>
-<sub>MIT License · GhostPay 2026</sub>
+<sub>GhostPay is a demo project, not an official Moka United product. All data is synthetic.</sub>
+<br>
+<sub><a href="LICENSE">MIT License</a> · © 2026 Buse Bozyel</sub>
 </div>
